@@ -1,0 +1,13 @@
+# config.yaml — DocWorm SDK Configuration
+#
+# API key is always required (our server authenticates every request).
+# Accepts a Firebase ID token or a DocWorm API key (dw_live_...).
+# Models are configured on the server side — see GET /v1/models.
+#
+# Usage: just set api_key. Models are handled server-side.
+#
+# Environment variables take precedence over this file:
+#   DOCWORM_API_KEY       (overrides api_key)
+
+api_key: ""                     # Your DocWorm API key (set via env or constructor)
+base_url: "https://docworm.web.app"  # Service URL (default: hosted service)

@@ -1,0 +1,41 @@
+{
+  "name": "@docworm/sdk",
+  "version": "0.5.0",
+  "type": "module",
+  "description": "DocWorm SDK \u2014 document indexing, knowledge graphs, reasoning RAG, and chat",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "rag",
+    "knowledge-graph",
+    "document-indexing",
+    "ai",
+    "chat"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Hopperbase/docworm-sdk"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.0",
+    "typescript": "^5.5.0",
+    "vitest": "^3.0.0"
+  }
+}
