@@ -4,18 +4,26 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "docworm"
-version = "0.6.0"
+dynamic = ["version"]
 description = "DocWorm SDK — document indexing, knowledge graphs, reasoning RAG, and chat"
 readme = "README.md"
-license = {text = "Apache-2.0"}
+license = "Apache-2.0"
 requires-python = ">=3.11"
 authors = [
-    {name = "Hopperbase", email = "team@b-ctrl.com"},
+    {name = "Hopperbase", email = "dev@docworm.ai"},
+]
+keywords = [
+    "docworm",
+    "sdk",
+    "rag",
+    "document-indexing",
+    "knowledge-graph",
+    "chat",
+    "reasoning",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -32,9 +40,19 @@ Homepage = "https://github.com/Hopperbase/docworm-sdk"
 Documentation = "https://github.com/Hopperbase/docworm-sdk#readme"
 Repository = "https://github.com/Hopperbase/docworm-sdk"
 Issues = "https://github.com/Hopperbase/docworm-sdk/issues"
+Changelog = "https://github.com/Hopperbase/docworm-sdk/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
 ]
+
+[tool.setuptools]
+packages = ["docworm"]
+
+[tool.setuptools.dynamic]
+version = {attr = "docworm.__version__"}
+
+[tool.setuptools.package-data]
+docworm = ["py.typed"]

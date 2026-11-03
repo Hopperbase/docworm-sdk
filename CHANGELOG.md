@@ -13,6 +13,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - TypeScript `chatStreamSse` / `chatReconnectSse`: the same SSE streaming
   methods for the hosted service.
 
+### Packaging
+- PyPI-ready metadata: `LICENSE` and `NOTICE` are now shipped inside the sdist
+  and wheel, the license is declared as the SPDX expression `Apache-2.0`, and
+  `docworm.__version__` is the single source of truth for the version.
+- Type information is declared via a bundled `py.typed` marker; keywords and a
+  changelog URL are published in the project metadata.
+- The sdist no longer ships `tests/`.
+
 ## [Unreleased]
 
 ### Fixed

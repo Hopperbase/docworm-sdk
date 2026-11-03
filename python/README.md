@@ -383,4 +383,4 @@ except HTTPStatusError as e:
 
 ## License
 
-Apache 2.0 — see [LICENSE](../LICENSE).
+Apache 2.0 — see [LICENSE](LICENSE).
