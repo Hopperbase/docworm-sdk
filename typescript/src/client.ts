@@ -1,7 +1,9 @@
 import type {
   ChatEvent,
   ChatInfo,
+  ChatReconnectSseOptions,
   ChatStreamOptions,
+  ChatStreamSseOptions,
   CodegenResponse,
   DocumentStatus,
   ExcelPreview,
@@ -552,7 +554,7 @@ export class DocWorm {
     return d.title ?? "";
   }
 
-  // ── Chat streaming (WebSocket) ─────────────────────────────
+  // ── Chat streaming (WebSocket + SSE) ───────────────────────
 
   private mapWsEvent(event: string, data: unknown): ChatEvent | null {
     const d = (typeof data === "object" && data !== null ? data : {}) as Record<string, unknown>;
@@ -746,6 +748,154 @@ export class DocWorm {
     };
     if (options?.attached_docs) frame.attached_docs = options.attached_docs;
     yield* this.wsStream(chat_id, frame);
+  }
+
+  private mapSsePayload(payload: string): ChatEvent | null {
+    let frame: unknown;
+    try {
+      frame = JSON.parse(payload);
+    } catch {
+      return null;
+    }
+    if (typeof frame !== "object" || frame === null) return null;
+    const f = frame as { event?: unknown; data?: unknown };
+    const event = typeof f.event === "string" ? f.event : "";
+    return this.mapWsEvent(event, f.data);
+  }
+
+  private async *sseStream(
+    chat_id: string,
+    body: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): AsyncGenerator<ChatEvent> {
+    const res = await fetch(
+      `${this.baseUrl}/v1/chats/${encodeURIComponent(chat_id)}/stream`,
+      {
+        method: "POST",
+        headers: {
+          ...this.headers(),
+          Accept: "text/event-stream",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+        signal,
+      },
+    );
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new DocWormError(res.status, text.slice(0, 300));
+    }
+    if (!res.body) {
+      throw new DocWormError(res.status, "SSE response has no body");
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let dataLines: string[] = [];
+
+    const handleLine = (rawLine: string): ChatEvent | null => {
+      let line = rawLine;
+      if (line.endsWith("\r")) line = line.slice(0, -1);
+      if (line === "") {
+        if (dataLines.length === 0) return null;
+        const payload = dataLines.join("\n");
+        dataLines = [];
+        return this.mapSsePayload(payload);
+      }
+      if (line.startsWith(":") || !line.startsWith("data:")) return null;
+      let value = line.slice(5);
+      if (value.startsWith(" ")) value = value.slice(1);
+      dataLines.push(value);
+      return null;
+    };
+
+    const cancel = async (): Promise<void> => {
+      try {
+        await reader.cancel();
+      } catch {
+        /* stream already closed */
+      }
+    };
+
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) {
+          buffer += decoder.decode();
+          if (buffer.length > 0) {
+            const evt = handleLine(buffer);
+            buffer = "";
+            if (evt) {
+              yield evt;
+              if (evt.type === "done" || evt.type === "error") {
+                await cancel();
+                return;
+              }
+            }
+          }
+          break;
+        }
+        buffer += decoder.decode(value, { stream: true });
+        let newline = buffer.indexOf("\n");
+        while (newline >= 0) {
+          const line = buffer.slice(0, newline);
+          buffer = buffer.slice(newline + 1);
+          const evt = handleLine(line);
+          if (evt) {
+            yield evt;
+            if (evt.type === "done" || evt.type === "error") {
+              await cancel();
+              return;
+            }
+          }
+          newline = buffer.indexOf("\n");
+        }
+      }
+      // Flush a final event that arrived without a blank line.
+      if (dataLines.length > 0) {
+        const evt = this.mapSsePayload(dataLines.join("\n"));
+        if (evt) yield evt;
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  /**
+   * Stream a chat turn over SSE. Use this when a WebSocket upgrade is
+   * unavailable (the hosted service); events and terminal semantics match
+   * `chatStream`.
+   *
+   * Call `retryChatMessage()` first when retrying an existing turn, and pass
+   * the resulting parent/retry/base ids via options.
+   */
+  async *chatStreamSse(
+    chatId: string,
+    message: string,
+    opts?: ChatStreamSseOptions,
+  ): AsyncGenerator<ChatEvent> {
+    const body: Record<string, unknown> = { type: "chat", message };
+    if (opts?.model) body.model = opts.model;
+    if (opts?.orchestration) body.orchestration = opts.orchestration;
+    if (opts?.parentMsgId) body.parent_msg_id = opts.parentMsgId;
+    if (opts?.retryMsgId) body.retry_msg_id = opts.retryMsgId;
+    if (opts?.baseMsgId) body.base_msg_id = opts.baseMsgId;
+    yield* this.sseStream(chatId, body, opts?.signal);
+  }
+
+  /** Replay missed events over SSE. Mirrors `chatReconnect`. */
+  async *chatReconnectSse(
+    chatId: string,
+    msgId: string,
+    lastSeq = -1,
+    opts?: ChatReconnectSseOptions,
+  ): AsyncGenerator<ChatEvent> {
+    yield* this.sseStream(
+      chatId,
+      { type: "reconnect", msg_id: msgId, last_seq: lastSeq },
+      opts?.signal,
+    );
   }
 
   // ── Query ──────────────────────────────────────────────────

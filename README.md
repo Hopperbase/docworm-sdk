@@ -69,13 +69,32 @@ Models resolve server-side from the `model_configs/active` document — there ar
 no per-request model parameters. Use `client.list_models()` to inspect the
 active defaults.
 
-## Chat Is WebSocket-Only
+## Chat Streaming
 
-There is no REST chat endpoint. `chat_stream` / `chatStream` open
-`WS /v1/chats/{chat_id}/chat` (auth frame first, then a `chat` frame) and yield
-typed events: `thinking`, `answer`, `citation`, `action`, `trace`, `done`, `error`
-(see `ChatEvent`). Retry an existing turn with `retry_chat_message()` +
-`parent_msg_id`/`retry_msg_id`, or resume a dropped stream with `chat_reconnect()`.
+`chat_stream` / `chatStream` open `WS /v1/chats/{chat_id}/chat` (auth frame
+first, then a `chat` frame) and yield typed events: `thinking`, `answer`,
+`citation`, `action`, `trace`, `done`, `error` (see `ChatEvent`). Retry an
+existing turn with `retry_chat_message()` + `parent_msg_id`/`retry_msg_id`, or
+resume a dropped stream with `chat_reconnect()`.
+
+For the hosted service, where WebSocket upgrades are unavailable, use the SSE
+variants against `POST /v1/chats/{chat_id}/stream`:
+
+```python
+async for event in client.chat_stream_sse("research-chat", "Summarize this"):
+    if event.type == "answer":
+        print(event.text, end="")
+```
+
+```typescript
+for await (const event of client.chatStreamSse("research-chat", "Summarize this")) {
+  if (event.type === "answer") process.stdout.write(event.text ?? "");
+}
+```
+
+The WebSocket methods remain for direct-to-service connections, while SSE is
+the recommended path for the hosted `base_url`. Resume a dropped SSE stream
+with `chat_reconnect_sse()` / `chatReconnectSse()`.
 
 ## Config File
 

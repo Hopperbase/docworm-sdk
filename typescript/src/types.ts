@@ -214,6 +214,19 @@ export interface ChatStreamOptions {
   base_msg_id?: string;
 }
 
+export interface ChatStreamSseOptions {
+  model?: string;
+  orchestration?: "auto" | "direct";
+  parentMsgId?: string;
+  retryMsgId?: string;
+  baseMsgId?: string;
+  signal?: AbortSignal;
+}
+
+export interface ChatReconnectSseOptions {
+  signal?: AbortSignal;
+}
+
 export interface CodegenResponse {
   code_id: string;
   code: string;

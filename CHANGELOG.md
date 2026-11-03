@@ -4,6 +4,15 @@ All notable changes to the DocWorm SDK are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-11-03
+
+### Added
+- Python `chat_stream_sse` / `chat_reconnect_sse`: stream a chat turn and
+  replay missed events over `POST /v1/chats/{chat_id}/stream` (SSE) for the
+  hosted service, where a WebSocket upgrade is unavailable.
+- TypeScript `chatStreamSse` / `chatReconnectSse`: the same SSE streaming
+  methods for the hosted service.
+
 ## [Unreleased]
 
 ### Fixed

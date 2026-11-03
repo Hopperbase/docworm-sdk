@@ -1,12 +1,13 @@
 """
-DocWorm Python SDK (0.5.0).
+DocWorm Python SDK (0.6.0).
 
-Thin client over the DocWorm REST API plus the WebSocket chat stream.
-Covers documents, chats, reasoning RAG queries, codegen, tables, models,
+Thin client over the DocWorm REST API plus the chat streams (WebSocket and
+SSE). Covers documents, chats, reasoning RAG queries, codegen, tables, models,
 skills, and titles.
 
 Canonical identifiers are file_id (document) and chat_id (chat).
-Chat streaming is WebSocket-only: see chat_stream().
+Chat streaming is available over WebSocket (chat_stream) and over SSE
+(chat_stream_sse) for deployments where a WebSocket upgrade is unavailable.
 
 Configuration priority (highest first):
   1. Constructor arguments
@@ -56,6 +57,82 @@ logger = logging.getLogger(__name__)
 # Terminal statuses on the file row — wait_for_indexing stops polling.
 _SUCCESS_STATUSES = ("ready", "completed", "indexed")
 _FAILED_STATUSES = ("error", "failed", "cancelled")
+
+
+def _normalize_chat_data(data: Any) -> dict:
+    """Normalize a WS/SSE ``data`` payload to a dict.
+
+    The backend may deliver data as an object or as a JSON string.
+    """
+    if isinstance(data, dict):
+        return data
+    if isinstance(data, str):
+        try:
+            parsed = json.loads(data)
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def _map_chat_event(event: str, data: Any) -> Optional[ChatEvent]:
+    """Map a backend chat event (WS or SSE) to a ChatEvent.
+
+    Shared by the WebSocket and SSE transports; returns None for
+    liveness/housekeeping events that are not surfaced.
+    """
+    d = _normalize_chat_data(data)
+    text = d.get("text", "") if isinstance(d.get("text"), str) else ""
+
+    if event == "thinking_chunk" or event == "thought":
+        return ChatEvent(type="thinking", text=text, data=d)
+    if event == "answer_chunk":
+        return ChatEvent(type="answer", text=text, data=d)
+    if event == "status_chunk":
+        return ChatEvent(type="status", text=text, data=d)
+    if event == "citation":
+        cit = d.get("citation", d)
+        citation = cited_node_from_dict(cit if isinstance(cit, dict) else {})
+        return ChatEvent(type="citation", citation=citation, data=d)
+    if event in ("action_start", "action_complete"):
+        return ChatEvent(type="action", text=text, data=d)
+    if event in (
+        "trace_group", "trace_group_end", "trace_item", "trace_item_update",
+        "thinking_phase_start", "thinking_phase_end", "nodes_selected",
+        "selected_sections", "files_read", "entity_discovered",
+        "subtasks_declared", "subtask_start", "subtask_action",
+        "subtask_complete", "compaction",
+    ):
+        return ChatEvent(type="trace", text=text, data=d)
+    if event == "plan_update":
+        return ChatEvent(type="plan", data=d)
+    if event == "todo_updated":
+        return ChatEvent(type="todo", data=d)
+    if event == "traversal":
+        return ChatEvent(type="traversal", text=text, data=d)
+    if event in ("artifact_card", "artifact.ready", "artifact.created"):
+        return ChatEvent(type="artifact", data=d)
+    if event in ("prediction_viz", "excel_viz", "viz"):
+        return ChatEvent(type="viz", data=d)
+    if event == "graph_status":
+        return ChatEvent(type="graph", text=text, data=d)
+    if event == "work_completed":
+        return ChatEvent(type="work_completed", data=d)
+    if event == "interrupted":
+        return ChatEvent(type="interrupted", data=d)
+    if event == "done":
+        return ChatEvent(
+            type="done",
+            msg_id=d.get("msg_id", ""),
+            usage=_usage_from_dict(d.get("usage")),
+            data=d,
+        )
+    if event == "error":
+        err = d.get("error", "")
+        return ChatEvent(type="error", error=err if isinstance(err, str) else str(err), data=d)
+    # Liveness/housekeeping: thinking_start, working_start,
+    # status_heartbeat, ping — not surfaced.
+    return None
 
 
 class DocWorm:
@@ -916,76 +993,17 @@ class DocWorm:
         return resp.json().get("title", "")
 
     # ════════════════════════════════════════════════════════════════════════
-    # CHAT (WebSocket streaming)
+    # CHAT (WebSocket + SSE streaming)
     # ════════════════════════════════════════════════════════════════════════
 
     @staticmethod
     def _normalize_ws_data(data: Any) -> dict:
-        if isinstance(data, dict):
-            return data
-        if isinstance(data, str):
-            try:
-                parsed = json.loads(data)
-                return parsed if isinstance(parsed, dict) else {}
-            except json.JSONDecodeError:
-                return {}
-        return {}
+        return _normalize_chat_data(data)
 
     @classmethod
     def _map_ws_event(cls, event: str, data: Any) -> Optional[ChatEvent]:
         """Map a backend WS event to a ChatEvent. Returns None to skip."""
-        d = cls._normalize_ws_data(data)
-        text = d.get("text", "") if isinstance(d.get("text"), str) else ""
-
-        if event == "thinking_chunk" or event == "thought":
-            return ChatEvent(type="thinking", text=text, data=d)
-        if event == "answer_chunk":
-            return ChatEvent(type="answer", text=text, data=d)
-        if event == "status_chunk":
-            return ChatEvent(type="status", text=text, data=d)
-        if event == "citation":
-            cit = d.get("citation", d)
-            citation = cited_node_from_dict(cit if isinstance(cit, dict) else {})
-            return ChatEvent(type="citation", citation=citation, data=d)
-        if event in ("action_start", "action_complete"):
-            return ChatEvent(type="action", text=text, data=d)
-        if event in (
-            "trace_group", "trace_group_end", "trace_item", "trace_item_update",
-            "thinking_phase_start", "thinking_phase_end", "nodes_selected",
-            "selected_sections", "files_read", "entity_discovered",
-            "subtasks_declared", "subtask_start", "subtask_action",
-            "subtask_complete", "compaction",
-        ):
-            return ChatEvent(type="trace", text=text, data=d)
-        if event == "plan_update":
-            return ChatEvent(type="plan", data=d)
-        if event == "todo_updated":
-            return ChatEvent(type="todo", data=d)
-        if event == "traversal":
-            return ChatEvent(type="traversal", text=text, data=d)
-        if event in ("artifact_card", "artifact.ready", "artifact.created"):
-            return ChatEvent(type="artifact", data=d)
-        if event in ("prediction_viz", "excel_viz", "viz"):
-            return ChatEvent(type="viz", data=d)
-        if event == "graph_status":
-            return ChatEvent(type="graph", text=text, data=d)
-        if event == "work_completed":
-            return ChatEvent(type="work_completed", data=d)
-        if event == "interrupted":
-            return ChatEvent(type="interrupted", data=d)
-        if event == "done":
-            return ChatEvent(
-                type="done",
-                msg_id=d.get("msg_id", ""),
-                usage=_usage_from_dict(d.get("usage")),
-                data=d,
-            )
-        if event == "error":
-            err = d.get("error", "")
-            return ChatEvent(type="error", error=err if isinstance(err, str) else str(err), data=d)
-        # Liveness/housekeeping: thinking_start, working_start,
-        # status_heartbeat, ping — not surfaced.
-        return None
+        return _map_chat_event(event, data)
 
     async def _ws_stream(
         self, chat_id: str, request_frame: dict
@@ -1101,6 +1119,131 @@ class DocWorm:
         if attached_docs:
             frame["attached_docs"] = attached_docs
         return self._ws_stream(chat_id, frame)
+
+    # -- SSE streaming (hosted service) ------------------------------
+
+    @staticmethod
+    def _dispatch_sse_event(data_lines: list[str]) -> Optional[ChatEvent]:
+        """Map one assembled SSE event payload to a ChatEvent.
+
+        The payload is the JSON object the backend writes on the ``data:``
+        line: ``{"event": name, "data": {...}, "seq": n}``.
+        """
+        if not data_lines:
+            return None
+        payload = "\n".join(data_lines)
+        try:
+            frame = json.loads(payload)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(frame, dict):
+            return None
+        event = frame.get("event", "")
+        return _map_chat_event(
+            event if isinstance(event, str) else "", frame.get("data", {})
+        )
+
+    async def _sse_stream(
+        self, chat_id: str, request_body: dict, timeout: float
+    ) -> AsyncGenerator[ChatEvent, None]:
+        url = f"{self.base_url}/v1/chats/{quote(chat_id)}/stream"
+        headers = {
+            **self._headers,
+            "Accept": "text/event-stream",
+            "Content-Type": "application/json",
+        }
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(30.0, read=timeout)
+        ) as ac:
+            async with ac.stream(
+                "POST", url, json=request_body, headers=headers
+            ) as resp:
+                resp.raise_for_status()
+                data_lines: list[str] = []
+                async for line in resp.aiter_lines():
+                    if line == "":
+                        evt = self._dispatch_sse_event(data_lines)
+                        data_lines = []
+                        if evt is None:
+                            continue
+                        yield evt
+                        if evt.type in ("done", "error"):
+                            return
+                        continue
+                    if line.startswith(":") or not line.startswith("data:"):
+                        continue
+                    value = line[5:]
+                    if value.startswith(" "):
+                        value = value[1:]
+                    data_lines.append(value)
+                # Flush a final event that arrived without a blank line.
+                evt = self._dispatch_sse_event(data_lines)
+                if evt is not None:
+                    yield evt
+
+    async def chat_stream_sse(
+        self,
+        chat_id: str,
+        message: str,
+        *,
+        model: Optional[str] = None,
+        orchestration: Optional[str] = None,
+        parent_msg_id: Optional[str] = None,
+        retry_msg_id: Optional[str] = None,
+        base_msg_id: Optional[str] = None,
+        timeout: float = 600.0,
+    ) -> AsyncGenerator[ChatEvent, None]:
+        """
+        Stream a chat turn over SSE (hosted service).
+
+        Use this instead of :meth:`chat_stream` when a WebSocket upgrade is
+        unavailable; events and terminal semantics are identical.
+
+        Args:
+            chat_id: Chat identifier.
+            message: User message (empty for pure retries driven by ids).
+            model: Optional model override forwarded to the backend.
+            orchestration: "auto" (strategy-based) or "direct"; server
+                default when omitted.
+            parent_msg_id, retry_msg_id, base_msg_id: retry/edit context -
+                call retry_chat_message() first for retries.
+            timeout: Read timeout in seconds for the event stream.
+
+        Yields:
+            ChatEvent objects (thinking -> answer -> citation* -> done/error).
+            Consume with ``async for``.
+        """
+        body: dict = {"type": "chat", "message": message}
+        if model:
+            body["model"] = model
+        if orchestration:
+            body["orchestration"] = orchestration
+        if parent_msg_id:
+            body["parent_msg_id"] = parent_msg_id
+        if retry_msg_id:
+            body["retry_msg_id"] = retry_msg_id
+        if base_msg_id:
+            body["base_msg_id"] = base_msg_id
+        async for evt in self._sse_stream(chat_id, body, timeout):
+            yield evt
+
+    async def chat_reconnect_sse(
+        self,
+        chat_id: str,
+        msg_id: str,
+        last_seq: int = -1,
+        *,
+        timeout: float = 600.0,
+    ) -> AsyncGenerator[ChatEvent, None]:
+        """
+        Replay missed events over SSE (hosted service).
+
+        Mirrors :meth:`chat_reconnect` for deployments without WebSocket
+        support.
+        """
+        body = {"type": "reconnect", "msg_id": msg_id, "last_seq": last_seq}
+        async for evt in self._sse_stream(chat_id, body, timeout):
+            yield evt
 
     # ════════════════════════════════════════════════════════════════════════
     # REASONING RAG QUERY
