@@ -13,9 +13,9 @@ Configuration priority (highest first):
   2. Environment variables (DOCWORM_API_KEY, DOCWORM_URL)
   3. config.yaml file (optional, see project root)
 
-Auth accepts a Firebase ID token or a DocWorm API key (dw_live_...);
-both are sent as a Bearer token. X-API-KEY is accepted by the backend
-as an alternative, but the SDK always uses Bearer.
+Auth accepts a Firebase ID token or a DocWorm API key (dw_live_...).
+Firebase tokens are sent as ``Authorization: Bearer <token>``; DocWorm
+API keys are sent as ``X-API-KEY: <key>`` with no Authorization header.
 """
 
 import json
@@ -81,7 +81,12 @@ class DocWorm:
         cfg = load_config(api_key=api_key, base_url=base_url)
         self.base_url = cfg["base_url"].rstrip("/")
         self.api_key = cfg["api_key"]
-        self._headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+        if not self.api_key:
+            self._headers = {}
+        elif self.api_key.startswith("dw_live_"):
+            self._headers = {"X-API-KEY": self.api_key}
+        else:
+            self._headers = {"Authorization": f"Bearer {self.api_key}"}
 
     # ── low-level ────────────────────────────────────────────────────
 
@@ -208,11 +213,15 @@ class DocWorm:
         Index an already-uploaded document (or upload + index in one step
         by passing ``file``).
 
+        ``file_id`` is sent as a query parameter; the optional scoping
+        fields are still form fields.
+
         Returns:
             IndexResponse — usually ``status="queued"``; poll with
             wait_for_indexing() until ready.
         """
-        data: dict = {"file_id": file_id}
+        params = {"file_id": file_id}
+        data: dict = {}
         if project_id:
             data["project_id"] = project_id
         if chat_id:
@@ -226,6 +235,7 @@ class DocWorm:
 
         resp = httpx.post(
             f"{self.base_url}/v1/index",
+            params=params,
             data=data,
             files=files,
             headers=self._headers,
@@ -577,7 +587,7 @@ class DocWorm:
         if model:
             body["model"] = model
         resp = httpx.post(
-            f"{self.base_url}/v1/chats/",
+            f"{self.base_url}/v1/chats",
             json=body,
             headers=self._headers,
             timeout=30,
@@ -638,7 +648,7 @@ class DocWorm:
     def list_chats(self) -> list[dict]:
         """List all chats for the current user."""
         resp = httpx.get(
-            f"{self.base_url}/v1/chats/",
+            f"{self.base_url}/v1/chats",
             headers=self._headers,
             timeout=30,
         )
@@ -678,7 +688,7 @@ class DocWorm:
         name: str,
         gcs_path: str,
         chat_id: str,
-        file_id: Optional[str] = None,
+        file_id: str,
         title: Optional[str] = None,
         project_id: Optional[str] = None,
         size: int = 0,
@@ -687,12 +697,17 @@ class DocWorm:
         """
         Register a chat-uploaded file and enqueue indexing in the background.
 
+        ``file_id`` is required and always sent as ``fileId``.
+
         Returns:
             Dict with fileId and id.
         """
-        body: dict = {"name": name, "gcsPath": gcs_path, "chatId": chat_id}
-        if file_id:
-            body["fileId"] = file_id
+        body: dict = {
+            "name": name,
+            "gcsPath": gcs_path,
+            "chatId": chat_id,
+            "fileId": file_id,
+        }
         if title:
             body["title"] = title
         if project_id:

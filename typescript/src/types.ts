@@ -132,6 +132,8 @@ export interface TokenUsage {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
+  calls: number;
+  thinking_tokens: number;
 }
 
 export interface Message {

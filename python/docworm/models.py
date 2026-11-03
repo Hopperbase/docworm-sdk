@@ -30,6 +30,8 @@ class UsageInfo:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    calls: int = 0
+    thinking_tokens: int = 0
 
 
 @dataclass
@@ -214,11 +216,7 @@ def message_from_dict(m: dict) -> "Message":
         citations=[cited_node_from_dict(c) for c in (m.get("citations") or [])],
         steps=m.get("steps") or m.get("reasoning_traces") or [],
         actions=m.get("actions") or [],
-        usage=UsageInfo(
-            prompt_tokens=usage.get("prompt_tokens", 0),
-            completion_tokens=usage.get("completion_tokens", 0),
-            total_tokens=usage.get("total_tokens", 0),
-        ),
+        usage=_usage_from_dict(usage),
         attached_docs=m.get("attached_docs") or [],
         parent_msg_id=m.get("parent_msg_id", ""),
         status=m.get("status", ""),
@@ -259,8 +257,21 @@ def tree_node_from_dict(d: dict) -> TreeNode:
 
 def _usage_from_dict(d: Any) -> UsageInfo:
     d = d or {}
+    input_tokens = d.get("input_tokens")
+    if input_tokens is None:
+        input_tokens = d.get("prompt_tokens")
+    output_tokens = d.get("output_tokens")
+    if output_tokens is None:
+        output_tokens = d.get("completion_tokens")
+    input_tokens = int(input_tokens or 0)
+    output_tokens = int(output_tokens or 0)
+    total_tokens = d.get("total_tokens")
+    if total_tokens is None:
+        total_tokens = input_tokens + output_tokens
     return UsageInfo(
-        prompt_tokens=d.get("prompt_tokens", 0) or 0,
-        completion_tokens=d.get("completion_tokens", 0) or 0,
-        total_tokens=d.get("total_tokens", 0) or 0,
+        prompt_tokens=input_tokens,
+        completion_tokens=output_tokens,
+        total_tokens=int(total_tokens or 0),
+        calls=int(d.get("calls") or 0),
+        thinking_tokens=int(d.get("thinking_tokens") or 0),
     )

@@ -16,6 +16,7 @@ import type {
   QueryResponse,
   RetryFailedResponse,
   Skill,
+  TokenUsage,
   TreeNode,
   UploadResponse,
 } from "./types.js";
@@ -38,6 +39,26 @@ export class DocWormError extends Error {
 const SUCCESS_STATUSES = new Set(["ready", "completed", "indexed"]);
 const FAILED_STATUSES = new Set(["error", "failed", "cancelled"]);
 
+function normalizeUsage(raw: unknown): TokenUsage | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const d = raw as Record<string, unknown>;
+  const toInt = (value: unknown): number =>
+    typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : 0;
+  const inputTokens = toInt(d.input_tokens ?? d.prompt_tokens);
+  const outputTokens = toInt(d.output_tokens ?? d.completion_tokens);
+  const totalTokens =
+    d.total_tokens === undefined || d.total_tokens === null
+      ? inputTokens + outputTokens
+      : toInt(d.total_tokens);
+  return {
+    prompt_tokens: inputTokens,
+    completion_tokens: outputTokens,
+    total_tokens: totalTokens,
+    calls: toInt(d.calls),
+    thinking_tokens: toInt(d.thinking_tokens),
+  };
+}
+
 export class DocWorm {
   private baseUrl: string;
   private apiKey: string;
@@ -50,7 +71,8 @@ export class DocWorm {
 
   private headers(): Record<string, string> {
     const h: Record<string, string> = { Accept: "application/json" };
-    if (this.apiKey) h["Authorization"] = `Bearer ${this.apiKey}`;
+    if (this.apiKey.startsWith("dw_live_")) h["X-API-KEY"] = this.apiKey;
+    else if (this.apiKey) h["Authorization"] = `Bearer ${this.apiKey}`;
     return h;
   }
 
@@ -165,17 +187,25 @@ export class DocWorm {
     file_id: string,
     options?: { project_id?: string; chat_id?: string; folder_id?: string; file?: File | Buffer | string; filename?: string },
   ): Promise<IndexResponse> {
+    const query = this.qs({ file_id });
     if (!options?.file) {
       const form = new FormData();
-      form.append("file_id", file_id);
-      if (options?.project_id) form.append("project_id", options.project_id);
-      if (options?.chat_id) form.append("chat_id", options.chat_id);
-      if (options?.folder_id) form.append("folder_id", options.folder_id);
-      const res = await fetch(`${this.baseUrl}/v1/index`, {
-        method: "POST",
-        headers: this.headers(),
-        body: form,
-      });
+      let hasFields = false;
+      if (options?.project_id) {
+        form.append("project_id", options.project_id);
+        hasFields = true;
+      }
+      if (options?.chat_id) {
+        form.append("chat_id", options.chat_id);
+        hasFields = true;
+      }
+      if (options?.folder_id) {
+        form.append("folder_id", options.folder_id);
+        hasFields = true;
+      }
+      const init: RequestInit = { method: "POST", headers: this.headers() };
+      if (hasFields) init.body = form;
+      const res = await fetch(`${this.baseUrl}/v1/index${query}`, init);
       if (!res.ok) {
         const text = await res.text().catch(() => "");
         throw new DocWormError(res.status, text);
@@ -184,10 +214,9 @@ export class DocWorm {
     }
     // One-step upload + index.
     const form = new FormData();
-    form.append("file_id", file_id);
     const { blob, filename: detected } = await this.toBlob(options.file);
     form.append("file", blob, options.filename || detected);
-    const res = await fetch(`${this.baseUrl}/v1/index`, {
+    const res = await fetch(`${this.baseUrl}/v1/index${query}`, {
       method: "POST",
       headers: this.headers(),
       body: form,
@@ -353,11 +382,11 @@ export class DocWorm {
     if (options?.display_name) body.display_name = options.display_name;
     if (options?.project_id) body.project_id = options.project_id;
     if (options?.model) body.model = options.model;
-    return this.requestJson("POST", "/v1/chats/", body);
+    return this.requestJson("POST", "/v1/chats", body);
   }
 
   async listChats(): Promise<Record<string, unknown>[]> {
-    const d = await this.requestJson<{ chats: Record<string, unknown>[] }>("GET", "/v1/chats/");
+    const d = await this.requestJson<{ chats: Record<string, unknown>[] }>("GET", "/v1/chats");
     return d.chats ?? [];
   }
 
@@ -398,7 +427,7 @@ export class DocWorm {
     name: string;
     gcsPath: string;
     chatId: string;
-    fileId?: string;
+    fileId: string;
     title?: string;
     projectId?: string;
     size?: number;
@@ -582,7 +611,7 @@ export class DocWorm {
         return {
           type: "done",
           msg_id: typeof d.msg_id === "string" ? d.msg_id : undefined,
-          usage: (d.usage ?? undefined) as ChatEvent["usage"],
+          usage: normalizeUsage(d.usage),
           data: d,
         };
       case "error": {
