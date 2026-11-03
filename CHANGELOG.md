@@ -30,6 +30,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and the TypeScript client.
 - Added `delete_file` / `deleteFile` alias (`DELETE /v1/files/{file_id}`).
 
+### Repository
+- `config.yaml` is no longer tracked. Copy `config.yaml.example` to
+  `config.yaml` for local configuration.
+
 ## [0.5.0] — 2026-09-21
 
 Public SDK surface across Python and TypeScript: documents, chats
