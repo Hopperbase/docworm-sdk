@@ -9,8 +9,8 @@ Loads config from, in priority order (highest first):
 The config file is optional — for most users, just pass api_key to the constructor
 or set DOCWORM_API_KEY env var.
 
-Auth accepts either a Firebase ID token or a DocWorm API key (dw_live_...);
-both are sent as a Bearer token.
+Auth accepts a DocWorm API key (dw_live_...), sent as ``X-API-KEY``, or a
+bearer token, sent as ``Authorization: Bearer``.
 """
 
 import os

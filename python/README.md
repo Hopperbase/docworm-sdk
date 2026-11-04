@@ -16,7 +16,7 @@ Requires `httpx` and `websockets` (installed automatically).
 import asyncio
 from docworm import DocWorm
 
-client = DocWorm(api_key="your-firebase-id-token-or-api-key")
+client = DocWorm(api_key="dw_live_...")  # or export DOCWORM_API_KEY
 
 # Upload and index a document
 upload = client.upload("report.pdf")
@@ -28,9 +28,9 @@ print(f"Indexed {status.processed_pages}/{status.total_pages} pages")
 client.create_chat("my-chat", display_name="My Chat")
 client.attach_documents("my-chat", [upload.file_id])
 
-# Stream a chat turn (WebSocket)
+# Stream a chat turn over SSE
 async def main():
-    async for event in client.chat_stream("my-chat", "What does the report say?"):
+    async for event in client.chat_stream_sse("my-chat", "What does the report say?"):
         if event.type == "answer":
             print(event.text, end="")
         elif event.type == "citation":
@@ -45,11 +45,16 @@ asyncio.run(main())
 ## Configuration
 
 ```python
-client = DocWorm(api_key="your-api-key")  # or DOCWORM_API_KEY env var
+client = DocWorm()  # reads DOCWORM_API_KEY, DOCWORM_URL, and config.yaml
+client = DocWorm(api_key="dw_live_...")
 ```
 
-Auth accepts a Firebase ID token or a DocWorm API key (`dw_live_...`).
-Models resolve server-side — see `client.list_models()`.
+Authenticate with a DocWorm API key (`dw_live_...`, sent via `X-API-KEY`). Copy
+`config.yaml.example` to `config.yaml` for local file configuration.
+
+Models resolve server-side from `model_configs/active` by default; use
+`client.list_models()` to inspect the active defaults. Optional `model`
+overrides are supported on chat creation and `chat_stream_sse`.
 
 ## Documents
 
@@ -220,7 +225,7 @@ client.delete_message("research-chat", msg_id="m3")
 # Cancel a streaming turn
 client.cancel_chat_message("research-chat", msg_id="streaming-id")
 
-# Prepare a retry, then open a WS retry stream with the ids
+# Prepare a retry, then stream again with the returned ids
 client.retry_chat_message("research-chat", msg_id="user-msg-id")
 
 # Inspect a message (steps, citations, buffer state)
@@ -230,8 +235,8 @@ client.diagnose_message("research-chat", msg_id="m1")
 ### Artifacts / Outputs / Titles
 
 ```python
-# Download a run artifact (extraction JSON)
-raw = client.get_run_artifact("research-chat", msg_id="m1", artifact_id="artifact_1")
+# Download a run artifact (parsed JSON dict)
+artifact = client.get_run_artifact("research-chat", msg_id="m1", artifact_id="artifact_1")
 
 # Download an archived structured output
 raw = client.download_output("research-chat", session_id="s1", filename="result.json")
@@ -243,12 +248,14 @@ client.consolidate_memories("research-chat")
 title = client.generate_title("quarterly revenue analysis")
 ```
 
-## Chat Streaming (WebSocket)
+## Chat Streaming
 
-Chat streaming is WebSocket-only. Consume with `async for`:
+SSE is the standard streaming path for the hosted service
+(`https://docworm.web.app`). `chat_stream_sse` opens
+`POST /v1/chats/{chat_id}/stream`; consume it with `async for`:
 
 ```python
-async for event in client.chat_stream("research-chat", "What are the key findings?"):
+async for event in client.chat_stream_sse("research-chat", "What are the key findings?"):
     if event.type == "thinking":
         print(f"  {event.text}", end="")
     elif event.type == "answer":
@@ -260,18 +267,39 @@ async for event in client.chat_stream("research-chat", "What are the key finding
     elif event.type == "error":
         print(f"\n  Error: {event.error}")
 
-# With per-turn attachments
-async for event in client.chat_stream(
-    "research-chat", "Compare these",
-    attached_docs=[{"id": "file_abc", "name": "report.pdf"}],
+# Optional model override for the turn
+async for event in client.chat_stream_sse(
+    "research-chat", "Compare these", model="...",
 ):
     ...
 
 # Retry an existing turn
 client.retry_chat_message("research-chat", msg_id=user_msg_id)
-async for event in client.chat_stream(
+async for event in client.chat_stream_sse(
     "research-chat", "",
     parent_msg_id=user_msg_id, retry_msg_id=assistant_msg_id,
+):
+    ...
+
+# Resume a dropped SSE stream
+async for event in client.chat_reconnect_sse("research-chat", streaming_msg_id, last_seq=12):
+    ...
+```
+
+On the `done` event, `event.usage` is a `UsageInfo` with `prompt_tokens`,
+`completion_tokens`, `total_tokens`, `calls`, and `thinking_tokens`.
+
+For direct-to-service deployments where WebSocket upgrades are available, the
+WebSocket variants behave the same way:
+
+```python
+async for event in client.chat_stream("research-chat", "What are the key findings?"):
+    ...
+
+# With per-turn attachments
+async for event in client.chat_stream(
+    "research-chat", "Compare these",
+    attached_docs=[{"id": "file_abc", "name": "report.pdf"}],
 ):
     ...
 
@@ -327,7 +355,7 @@ resp = client.query(
 client.cancel_query(session_id="session-123", message_id="msg-456")
 ```
 
-## Codegen / Tables / Models / Skills
+## Codegen / Tables / Models
 
 ```python
 # Generate (+ execute for excel_index) code for a document
@@ -344,12 +372,8 @@ client.get_artifact("research-chat", "my-artifact")
 client.synthesize_table("file_abc", pages=[1, 2])
 client.get_toc("file_abc")
 
-# Models (server-side config; no per-request overrides)
+# Models (server-side defaults; optional per-chat/stream overrides)
 client.list_models()
-
-# Skills
-skill = client.generate_skill("summarize invoices into a table")
-print(skill.name, skill.instruction)
 ```
 
 ## Low-Level Escape Hatch
@@ -379,8 +403,9 @@ except HTTPStatusError as e:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DOCWORM_API_KEY` | — | Firebase ID token or API key |
+| `DOCWORM_API_KEY` | - | DocWorm API key (`dw_live_...`) |
+| `DOCWORM_URL` | `https://docworm.web.app` | Service base URL |
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE).
+Apache 2.0 - see [LICENSE](https://github.com/Hopperbase/docworm-sdk/blob/main/LICENSE).

@@ -4,11 +4,23 @@ All notable changes to the DocWorm SDK are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.6.0a1] - 2026-11-04
+## [Unreleased]
 
-Pre-release to exercise the PyPI trusted-publishing pipeline end to end
-(tag policy, release trigger, version check, build, twine, upload).
-Identical to 0.6.0 otherwise.
+## [0.6.1] - 2026-11-04
+
+### Documentation
+- README and PyPI/npm documentation overhaul for the public SDK release.
+- Quick Starts and Chat Streaming docs now lead with SSE
+  (`chat_stream_sse` / `chatStreamSse`, `chat_reconnect_sse` /
+  `chatReconnectSse`); the WebSocket methods are documented for
+  direct-to-service deployments.
+- API key documentation cleanup: user-facing docs now describe DocWorm API
+  keys (`dw_live_...`) instead of Firebase ID tokens, and document
+  `DOCWORM_URL` plus copying `config.yaml.example` to `config.yaml`.
+- Removed unreleased Skills / `generate_skill` / `generateSkill` from the
+  READMEs; the client methods remain available.
+- Documented the `UsageInfo` / `TokenUsage` fields, including `calls` and
+  `thinking_tokens`, and fixed the `LICENSE` links for PyPI and npm.
 
 ## [0.6.0] - 2026-11-04
 
@@ -19,6 +31,13 @@ Identical to 0.6.0 otherwise.
 - TypeScript `chatStreamSse` / `chatReconnectSse`: the same SSE streaming
   methods for the hosted service.
 
+### Fixed
+- `put_code` / `putCode` accept an optional `source` field.
+- `edit_message` / `editMessage` accept `message` or `content`.
+- Python `get_run_artifact` returns parsed JSON, matching the REST contract
+  and the TypeScript client.
+- Added `delete_file` / `deleteFile` alias (`DELETE /v1/files/{file_id}`).
+
 ### Packaging
 - PyPI-ready metadata: `LICENSE` and `NOTICE` are now shipped inside the sdist
   and wheel, the license is declared as the SPDX expression `Apache-2.0`, and
@@ -27,18 +46,15 @@ Identical to 0.6.0 otherwise.
   changelog URL are published in the project metadata.
 - The sdist no longer ships `tests/`.
 
-## [Unreleased]
-
-### Fixed
-- `put_code` / `putCode` accept an optional `source` field.
-- `edit_message` / `editMessage` accept `message` or `content`.
-- Python `get_run_artifact` returns parsed JSON, matching the REST contract
-  and the TypeScript client.
-- Added `delete_file` / `deleteFile` alias (`DELETE /v1/files/{file_id}`).
-
 ### Repository
 - `config.yaml` is no longer tracked. Copy `config.yaml.example` to
   `config.yaml` for local configuration.
+
+## [0.6.0a1] - 2026-11-04
+
+Pre-release to exercise the PyPI trusted-publishing pipeline end to end
+(tag policy, release trigger, version check, build, twine, upload).
+Identical to 0.6.0 otherwise.
 
 ## [0.5.0] — 2026-09-21
 

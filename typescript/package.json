@@ -1,8 +1,9 @@
 {
   "name": "@docworm/sdk",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "type": "module",
   "description": "DocWorm SDK \u2014 document indexing, knowledge graphs, reasoning RAG, and chat",
+  "author": "Hopperbase <dev@docworm.ai>",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [

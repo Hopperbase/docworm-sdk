@@ -1,9 +1,9 @@
 """
-DocWorm Python SDK (0.6.0).
+DocWorm Python SDK (0.6.1).
 
 Thin client over the DocWorm REST API plus the chat streams (WebSocket and
 SSE). Covers documents, chats, reasoning RAG queries, codegen, tables, models,
-skills, and titles.
+and titles.
 
 Canonical identifiers are file_id (document) and chat_id (chat).
 Chat streaming is available over WebSocket (chat_stream) and over SSE
@@ -14,9 +14,9 @@ Configuration priority (highest first):
   2. Environment variables (DOCWORM_API_KEY, DOCWORM_URL)
   3. config.yaml file (optional, see project root)
 
-Auth accepts a Firebase ID token or a DocWorm API key (dw_live_...).
-Firebase tokens are sent as ``Authorization: Bearer <token>``; DocWorm
-API keys are sent as ``X-API-KEY: <key>`` with no Authorization header.
+Auth accepts a DocWorm API key (dw_live_...), sent as ``X-API-KEY: <key>``
+with no Authorization header, or a bearer token, sent as
+``Authorization: Bearer <token>``.
 """
 
 import json
@@ -140,8 +140,8 @@ class DocWorm:
     SDK client for the DocWorm service.
 
     Args:
-        base_url: DocWorm service URL (default: config.yaml > DOCWORM_URL env > hosted).
-        api_key: Firebase ID token or DocWorm API key (config.yaml > DOCWORM_API_KEY env).
+        base_url: DocWorm service URL (default: DOCWORM_URL env > config.yaml > hosted).
+        api_key: DocWorm API key, dw_live_... (default: DOCWORM_API_KEY env > config.yaml).
 
     Usage:
         client = DocWorm(api_key="...")
@@ -206,7 +206,7 @@ class DocWorm:
         return f"{base}{path}"
 
     def _ws_auth_frame(self) -> dict:
-        # dw_live_ keys go in api_key; Firebase JWTs go in token.
+        # dw_live_ keys go in api_key; bearer tokens go in token.
         if (self.api_key or "").startswith("dw_live_"):
             return {"type": "auth", "api_key": self.api_key}
         return {"type": "auth", "token": self.api_key}

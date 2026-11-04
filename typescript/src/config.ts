@@ -6,8 +6,8 @@
  *   2. Environment variables (DOCWORM_API_KEY, DOCWORM_URL)
  *   3. config.yaml file (optional)
  *
- * Auth accepts either a Firebase ID token or a DocWorm API key
- * (dw_live_...); both are sent as a Bearer token.
+ * Auth accepts a DocWorm API key (dw_live_...), sent as X-API-KEY, or a
+ * bearer token, sent as Authorization: Bearer.
  */
 
 import { readFileSync, existsSync } from "fs";

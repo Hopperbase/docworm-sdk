@@ -14,7 +14,7 @@ npm install @docworm/sdk
 import { DocWorm } from "@docworm/sdk";
 
 const client = new DocWorm({
-  apiKey: "your-api-key", // Firebase ID token or dw_live_ key
+  apiKey: "dw_live_...", // or DOCWORM_API_KEY env var
 });
 
 // Upload and index a document
@@ -26,8 +26,8 @@ await client.waitForIndexing(upload.file_id);
 await client.createChat("my-chat", { display_name: "My Chat" });
 await client.attachDocuments("my-chat", [upload.file_id]);
 
-// Stream a chat turn (WebSocket)
-for await (const event of client.chatStream("my-chat", "What does the document say?")) {
+// Stream a chat turn over SSE
+for await (const event of client.chatStreamSse("my-chat", "What does the document say?")) {
   if (event.type === "answer") process.stdout.write(event.text!);
   else if (event.type === "citation")
     console.log(`\nSource: ${event.citation!.filename} p.${event.citation!.start_page}`);
@@ -39,13 +39,17 @@ for await (const event of client.chatStream("my-chat", "What does the document s
 
 ```typescript
 const client = new DocWorm({
-  apiKey: "your-api-key", // or DOCWORM_API_KEY env var
+  apiKey: "dw_live_...", // or DOCWORM_API_KEY env var
 });
 ```
 
-Auth accepts a Firebase ID token or a DocWorm API key (`dw_live_...`).
-Models resolve server-side — see `client.listModels()`. In Node < 22, chat
-streaming uses the bundled `ws` fallback automatically.
+Authenticate with a DocWorm API key (`dw_live_...`, sent via `X-API-KEY`). Copy
+`config.yaml.example` to `config.yaml` for local file configuration.
+
+Models resolve server-side from `model_configs/active` by default; use
+`client.listModels()` to inspect the active defaults. Optional `model`
+overrides are supported on chat creation and `chatStreamSse`. In Node < 22,
+WebSocket chat streaming uses the bundled `ws` fallback automatically.
 
 ## Documents
 
@@ -129,12 +133,14 @@ await client.consolidateMemories("research");
 await client.generateTitle("quarterly revenue analysis");
 ```
 
-## Chat Streaming (WebSocket)
+## Chat Streaming
 
-Chat streaming is WebSocket-only (`WS /v1/chats/{chat_id}/chat`):
+SSE is the standard streaming path for the hosted service
+(`https://docworm.web.app`). `chatStreamSse` opens
+`POST /v1/chats/{chat_id}/stream`:
 
 ```typescript
-for await (const event of client.chatStream("research", "Summarize the document")) {
+for await (const event of client.chatStreamSse("research", "Summarize the document")) {
   if (event.type === "thinking") {
     process.stdout.write(event.text!);
   } else if (event.type === "answer") {
@@ -148,14 +154,44 @@ for await (const event of client.chatStream("research", "Summarize the document"
   }
 }
 
+// Optional per-turn options (ChatStreamSseOptions)
+for await (const event of client.chatStreamSse("research", "Compare these", {
+  model: "...",                 // optional model override
+  orchestration: "auto",        // "auto" or "direct"
+  parentMsgId: userMsgId,       // retry/edit context
+  retryMsgId: assistantMsgId,
+  baseMsgId: baseMsgId,
+  signal: abortController.signal,
+})) { /* ... */ }
+
 // Retry an existing turn
+await client.retryChatMessage("research", userMsgId);
+for await (const event of client.chatStreamSse("research", "", {
+  parentMsgId: userMsgId,
+  retryMsgId: assistantMsgId,
+})) { /* ... */ }
+
+// Resume a dropped SSE stream
+for await (const event of client.chatReconnectSse("research", streamingId, 12)) { /* ... */ }
+```
+
+On the `done` event, `event.usage` is a `TokenUsage` with `prompt_tokens`,
+`completion_tokens`, `total_tokens`, `calls`, and `thinking_tokens`.
+
+For direct-to-service deployments where WebSocket upgrades are available, use
+`chatStream` (`WS /v1/chats/{chat_id}/chat`), `chatReconnect`, and
+`chatInterrupt`:
+
+```typescript
+for await (const event of client.chatStream("research", "Summarize the document")) { /* ... */ }
+
+// Retry / resume / interrupt
 await client.retryChatMessage("research", userMsgId);
 for await (const event of client.chatStream("research", "", {
   parent_msg_id: userMsgId,
   retry_msg_id: assistantMsgId,
 })) { /* ... */ }
 
-// Resume a dropped stream / interrupt the current turn
 for await (const event of client.chatReconnect("research", streamingId, 12)) { /* ... */ }
 for await (const event of client.chatInterrupt("research", "Actually, do X")) { /* ... */ }
 ```
@@ -195,7 +231,7 @@ const resp = await client.query("Now tell me about expenses", {
 await client.cancelQuery("session-123", "msg-456");
 ```
 
-## Codegen / Tables / Models / Skills
+## Codegen / Tables / Models
 
 ```typescript
 const result = await client.generateCode({ chat_id: "research", file_id: "file_abc" });
@@ -209,8 +245,6 @@ await client.synthesizeTable("file_abc", [1, 2]);
 await client.getToc("file_abc");
 
 await client.listModels();
-
-await client.generateSkill("summarize invoices into a table");
 ```
 
 ## Error Handling
@@ -233,8 +267,9 @@ try {
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DOCWORM_API_KEY` | — | Firebase ID token or API key |
+| `DOCWORM_API_KEY` | - | DocWorm API key (`dw_live_...`) |
+| `DOCWORM_URL` | `https://docworm.web.app` | Service base URL |
 
 ## License
 
-Apache 2.0 — see [LICENSE](../LICENSE).
+Apache 2.0 - see [LICENSE](https://github.com/Hopperbase/docworm-sdk/blob/main/LICENSE).

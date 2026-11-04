@@ -27,6 +27,16 @@ class CitedNode:
 
 @dataclass
 class UsageInfo:
+    """Token usage reported on a ``done`` chat event.
+
+    Attributes:
+        prompt_tokens: Input/prompt tokens.
+        completion_tokens: Output/completion tokens.
+        total_tokens: Total tokens billed for the turn.
+        calls: Number of model calls made for the turn.
+        thinking_tokens: Tokens spent on reasoning/thinking.
+    """
+
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
@@ -36,7 +46,7 @@ class UsageInfo:
 
 @dataclass
 class ChatEvent:
-    """A single event from a WebSocket chat stream.
+    """A single event from a chat stream (SSE or WebSocket).
 
     type is one of: status | thinking | answer | citation | action | trace |
     plan | todo | traversal | artifact | viz | graph | work_completed |
