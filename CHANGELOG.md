@@ -10,7 +10,7 @@ Pre-release to exercise the PyPI trusted-publishing pipeline end to end
 (tag policy, release trigger, version check, build, twine, upload).
 Identical to 0.6.0 otherwise.
 
-## [0.6.0] - 2026-11-03
+## [0.6.0] - 2026-11-04
 
 ### Added
 - Python `chat_stream_sse` / `chat_reconnect_sse`: stream a chat turn and
