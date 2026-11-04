@@ -4,15 +4,29 @@ DocWorm Python SDK — Quick Start Example
 Usage:
     pip install docworm
     export DOCWORM_API_KEY=your-api-key
+    export DOCWORM_URL=https://docworm.web.app  # optional
     python examples/python/quickstart.py
 """
 
 import asyncio
+import os
+import sys
 
 from docworm import DocWorm
 
-# Initialize client (api_key also reads DOCWORM_API_KEY env var)
-client = DocWorm(api_key="your-api-key")
+# Credentials come from the environment; DOCWORM_URL is optional.
+api_key = os.getenv("DOCWORM_API_KEY", "").strip()
+if not api_key:
+    sys.exit(
+        "error: DOCWORM_API_KEY is not set - export it before running this example"
+        " (see the Environment Variables section of README.md)."
+    )
+
+# Initialize the client explicitly (no implicit config file discovery)
+client = DocWorm(
+    api_key=api_key,
+    base_url=os.getenv("DOCWORM_URL", "https://docworm.web.app"),
+)
 
 
 async def main() -> None:
@@ -32,9 +46,9 @@ async def main() -> None:
     client.attach_documents("research-chat", [upload.file_id])
     print("Document attached")
 
-    # Chat streaming (WebSocket) — consume with async for
+    # Chat streaming over SSE; the WebSocket chat_stream targets direct-to-service deployments.
     print("\n--- Streaming ---")
-    async for event in client.chat_stream("research-chat", "Summarize the document"):
+    async for event in client.chat_stream_sse("research-chat", "Summarize the document"):
         if event.type == "thinking":
             print(f"  {event.text}", end="")
         elif event.type == "answer":
