@@ -13,7 +13,8 @@
   "scripts": {
     "build": "tsc",
     "prepublishOnly": "npm run build",
-    "test": "vitest run"
+    "test": "vitest run",
+    "docs:typedoc": "typedoc --json ../docs/sdk-artifacts/typedoc.json src/index.ts"
   },
   "keywords": [
     "rag",
@@ -36,6 +37,7 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/ws": "^8.5.0",
+    "typedoc": "^0.28.20",
     "typescript": "^5.5.0",
     "vitest": "^3.0.0"
   }

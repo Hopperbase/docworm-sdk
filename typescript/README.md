@@ -2,11 +2,16 @@
 
 TypeScript/JavaScript SDK for the DocWorm service.
 
+Full documentation: see the `docs/` folder at the repository root (Mintlify-powered).
+
 ## Installation
 
 ```bash
 npm install @docworm/sdk
 ```
+
+The package installs the `ws` dependency automatically for WebSocket streaming
+fallback on Node < 22.
 
 ## Quick Start
 
@@ -135,8 +140,8 @@ await client.generateTitle("quarterly revenue analysis");
 
 ## Chat Streaming
 
-SSE is the standard streaming path for the hosted service
-(`https://docworm.web.app`). `chatStreamSse` opens
+SSE is the streaming transport for the hosted service.
+`chatStreamSse` opens
 `POST /v1/chats/{chat_id}/stream`:
 
 ```typescript
@@ -180,7 +185,7 @@ On the `done` event, `event.usage` is a `TokenUsage` with `prompt_tokens`,
 
 For direct-to-service deployments where WebSocket upgrades are available, use
 `chatStream` (`WS /v1/chats/{chat_id}/chat`), `chatReconnect`, and
-`chatInterrupt`:
+`chatInterrupt`. They cannot connect through the hosted service:
 
 ```typescript
 for await (const event of client.chatStream("research", "Summarize the document")) { /* ... */ }
@@ -268,7 +273,7 @@ try {
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DOCWORM_API_KEY` | - | DocWorm API key (`dw_live_...`) |
-| `DOCWORM_URL` | `https://docworm.web.app` | Service base URL |
+| `DOCWORM_URL` | hosted DocWorm service | Service base URL |
 
 ## License
 

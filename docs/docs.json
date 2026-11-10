@@ -1,0 +1,55 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "name": "DocWorm SDK",
+  "theme": "mint",
+  "colors": {
+    "primary": "#2563EB"
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Docs",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "index",
+              "quickstart",
+              "authentication",
+              "configuration"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/documents",
+              "guides/chats",
+              "guides/streaming",
+              "guides/query",
+              "guides/codegen",
+              "guides/models-skills",
+              "guides/errors",
+              "guides/raw-request"
+            ]
+          },
+          {
+            "group": "Python SDK Reference",
+            "sdk": {
+              "format": "sphinx",
+              "source": "sdk-artifacts/python",
+              "directory": "python-reference"
+            }
+          },
+          {
+            "group": "TypeScript SDK Reference",
+            "sdk": {
+              "format": "typedoc",
+              "source": "sdk-artifacts/typedoc.json",
+              "directory": "typescript-reference"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

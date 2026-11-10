@@ -2,6 +2,12 @@
 
 Official SDKs for the DocWorm service — document indexing, knowledge graphs, reasoning RAG, and chat.
 
+## Documentation
+
+Full documentation lives in [`docs/`](docs/) and is built with [Mintlify](https://mintlify.com).
+Run `scripts/docs.sh` to regenerate the SDK API reference artifacts and validate the site;
+for a live preview, run `npx mint dev` from `docs/`.
+
 ## Quick Start
 
 ### Python
@@ -73,8 +79,7 @@ inspect the active defaults.
 
 ## Chat Streaming
 
-SSE is the standard streaming path for the hosted service
-(`https://docworm.web.app`), where WebSocket upgrades are unavailable.
+SSE is the streaming transport for the hosted service.
 `chat_stream_sse` / `chatStreamSse` open
 `POST /v1/chats/{chat_id}/stream` and yield typed events (`thinking`,
 `answer`, `citation`, `done`, `error`; see `ChatEvent`). Resume a dropped
@@ -94,7 +99,8 @@ for await (const event of client.chatStreamSse("research-chat", "Summarize this"
 
 For direct-to-service deployments, where WebSocket upgrades are available,
 `chat_stream` / `chatStream` open `WS /v1/chats/{chat_id}/chat` (auth frame
-first, then a `chat` frame) and yield the same event types. Retry an existing
+first, then a `chat` frame) and yield the same event types. These methods
+cannot connect through the hosted service. Retry an existing
 turn with `retry_chat_message()` + `parent_msg_id`/`retry_msg_id`, resume a
 dropped stream with `chat_reconnect()` / `chatReconnect()`, or replace the
 current turn with `chat_interrupt()` / `chatInterrupt()`.
@@ -116,7 +122,7 @@ Example `config.yaml`:
 
 ```yaml
 api_key: "dw_live_..."
-base_url: "https://docworm.web.app"
+base_url: "https://docworm.example.com"
 ```
 
 ## Environment Variables
@@ -124,7 +130,7 @@ base_url: "https://docworm.web.app"
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `DOCWORM_API_KEY` | DocWorm API key (`dw_live_...`) | - |
-| `DOCWORM_URL` | Service base URL | `https://docworm.web.app` |
+| `DOCWORM_URL` | Service base URL | hosted DocWorm service |
 
 ## API Coverage
 

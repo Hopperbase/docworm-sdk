@@ -1,0 +1,8 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["src/index.ts"],
+  "emit": "both",
+  "exclude": ["**/node_modules/**"],
+  "excludePrivate": true,
+  "excludeInternal": true
+}

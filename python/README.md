@@ -2,6 +2,8 @@
 
 Python SDK for the DocWorm service — document indexing, knowledge graphs, reasoning RAG, and chat.
 
+Full documentation: see the [`docs/`](../docs/) folder (Mintlify-powered).
+
 ## Installation
 
 ```bash
@@ -250,8 +252,8 @@ title = client.generate_title("quarterly revenue analysis")
 
 ## Chat Streaming
 
-SSE is the standard streaming path for the hosted service
-(`https://docworm.web.app`). `chat_stream_sse` opens
+SSE is the streaming transport for the hosted service.
+`chat_stream_sse` opens
 `POST /v1/chats/{chat_id}/stream`; consume it with `async for`:
 
 ```python
@@ -290,7 +292,8 @@ On the `done` event, `event.usage` is a `UsageInfo` with `prompt_tokens`,
 `completion_tokens`, `total_tokens`, `calls`, and `thinking_tokens`.
 
 For direct-to-service deployments where WebSocket upgrades are available, the
-WebSocket variants behave the same way:
+WebSocket variants behave the same way. They cannot connect through the hosted
+service:
 
 ```python
 async for event in client.chat_stream("research-chat", "What are the key findings?"):
@@ -404,7 +407,7 @@ except HTTPStatusError as e:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DOCWORM_API_KEY` | - | DocWorm API key (`dw_live_...`) |
-| `DOCWORM_URL` | `https://docworm.web.app` | Service base URL |
+| `DOCWORM_URL` | hosted DocWorm service | Service base URL |
 
 ## License
 

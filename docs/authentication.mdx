@@ -1,0 +1,92 @@
+---
+title: "Authentication"
+description: "How DocWorm API keys and bearer tokens are sent, plus the environment variables the SDKs read."
+---
+
+## Getting an API key
+
+Generate a `dw_live_...` key in the DocWorm web application: sign in, open your
+account's API settings, and create a key. Pass it to the constructor or set
+`DOCWORM_API_KEY`; keys that start with `dw_live_` are sent as `X-API-KEY`. For
+bearer-authenticated calls, pass a user session bearer token instead, and it is sent
+as `Authorization: Bearer <token>`.
+
+## How the header is chosen
+
+The DocWorm service authenticates every request. The SDK picks the header from the
+shape of the key you provide:
+
+| Key value | Header sent |
+| --- | --- |
+| Starts with `dw_live_` | `X-API-KEY: <key>` |
+| Any other non-empty value | `Authorization: Bearer <key>` |
+| Empty or unset | No authentication header |
+
+This applies to every authenticated request the SDKs make, including the low-level
+raw request helpers. The codegen health check is unauthenticated by design.
+
+## Constructing the client
+
+<CodeGroup>
+```python Python
+from docworm import DocWorm
+
+# API key: sent as X-API-KEY
+client = DocWorm(api_key="dw_live_...")
+
+# Bearer token: any key that does not start with dw_live_
+client = DocWorm(api_key="eyJhbGciOi...")
+
+# Empty key: no auth header (local or unauthenticated deployments)
+client = DocWorm()
+
+# Optional service URL override
+client = DocWorm(api_key="dw_live_...", base_url="https://docworm.example.com")
+```
+
+```ts TypeScript
+import { DocWorm } from "@docworm/sdk";
+
+// API key: sent as X-API-KEY
+const client = new DocWorm({ apiKey: "dw_live_..." });
+
+// Bearer token: any key that does not start with dw_live_
+const bearer = new DocWorm({ apiKey: "eyJhbGciOi..." });
+
+// Empty key: no auth header (local or unauthenticated deployments)
+const anonymous = new DocWorm();
+
+// Optional service URL override
+const custom = new DocWorm({
+  apiKey: "dw_live_...",
+  baseUrl: "https://docworm.example.com",
+});
+```
+</CodeGroup>
+
+## Environment variables
+
+Both SDKs read the same variables when a constructor argument is omitted:
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| `DOCWORM_API_KEY` | DocWorm API key or bearer token | none |
+| `DOCWORM_URL` | Service base URL | hosted DocWorm service |
+
+```bash
+export DOCWORM_API_KEY="dw_live_..."
+export DOCWORM_URL="https://docworm.example.com"
+```
+
+A constructor argument always wins over the environment variable, which in turn wins
+over a `config.yaml` file. See [Configuration](/configuration) for the full chain.
+
+## Base URL
+
+The SDK defaults to the hosted DocWorm service; set `DOCWORM_URL` or `base_url` to
+point elsewhere. All SDK calls join paths onto this base URL.
+
+<Warning>
+Never ship an API key in client-side browser code. Use a backend proxy that keeps the
+key server-side and forwards only the requests your application needs.
+</Warning>

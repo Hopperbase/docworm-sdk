@@ -1,0 +1,129 @@
+---
+title: "Streaming"
+description: "Consume typed chat events over SSE, reconnect dropped streams, and cancel a running turn."
+---
+
+SSE is the streaming transport for the hosted service. `chat_stream_sse` /
+`chatStreamSse` open `POST /v1/chats/{chat_id}/stream` and yield typed chat events.
+A successful turn ends with `done`; a failed turn ends with `error`.
+
+<Note>
+The SDKs also ship WebSocket methods (`chat_stream`, `chat_reconnect`,
+`chat_interrupt` and their TypeScript twins) reserved for direct-to-service
+deployments where WebSocket upgrades are available. They cannot connect through the
+hosted service - use the SSE methods.
+</Note>
+
+## Consume an SSE stream
+
+<CodeGroup>
+```python Python
+async for event in client.chat_stream_sse("research-chat", "What are the key findings?"):
+    if event.type == "thinking":
+        print(event.text, end="")
+    elif event.type == "answer":
+        print(event.text, end="")
+    elif event.type == "citation":
+        c = event.citation
+        print(f"\n  Source: {c.filename} p.{c.start_page}-{c.end_page}")
+    elif event.type == "error":
+        print(f"\n  Error: {event.error}")
+    elif event.type == "done":
+        print(f"\n  Tokens: {event.usage.total_tokens}")
+```
+
+```ts TypeScript
+for await (const event of client.chatStreamSse(
+  "research-chat",
+  "What are the key findings?",
+)) {
+  if (event.type === "thinking") {
+    process.stdout.write(event.text ?? "");
+  } else if (event.type === "answer") {
+    process.stdout.write(event.text ?? "");
+  } else if (event.type === "citation") {
+    const c = event.citation!;
+    console.log(`\n  Source: ${c.filename} p.${c.start_page}-${c.end_page}`);
+  } else if (event.type === "error") {
+    console.error(`\n  Error: ${event.error}`);
+  } else if (event.type === "done") {
+    console.log(`\n  Tokens: ${event.usage?.total_tokens ?? 0}`);
+  }
+}
+```
+</CodeGroup>
+
+The Python consumer is an async generator backed by `httpx.AsyncClient`. The
+TypeScript SDK consumes the `fetch` response stream in a loop.
+
+## Reconnect a dropped stream
+
+Reconnects replay missed events from a sequence number. Pass the last `seq` the
+service reported for the turn, or `-1` to replay the whole turn.
+
+<Note>
+`ChatEvent` does not currently expose `seq`, so `-1` is the safe default. If you need
+exact resume points, capture the raw sequence numbers in your own transport layer.
+</Note>
+
+<CodeGroup>
+```python Python
+async for event in client.chat_reconnect_sse(
+    "research-chat", streaming_msg_id, last_seq=12
+):
+    ...
+```
+
+```ts TypeScript
+for await (const event of client.chatReconnectSse(
+  "research-chat",
+  streamingId,
+  12,
+)) {
+  // ...
+}
+```
+</CodeGroup>
+
+## Cancel a running turn
+
+To stop a running turn, use `cancel_chat_message` / `cancelChatMessage` from
+[Chats](/guides/chats). The stream then ends with an `interrupted` event.
+
+## Event types
+
+Every stream yields `ChatEvent` objects with a `type` field. A successful turn ends
+with `done`; a failed turn ends with `error`. An `interrupted` event is emitted when a
+turn is interrupted.
+
+| Event type | Meaning |
+| --- | --- |
+| `status` | Progress or state update for the turn. |
+| `thinking` | Model reasoning or thinking text. |
+| `answer` | Answer text; append it to build the response. |
+| `citation` | A source citation; use `event.citation` for filename and pages. |
+| `action` | A tool or action the agent took. |
+| `trace` | An internal reasoning or execution trace entry. |
+| `plan` | The plan the agent intends to follow. |
+| `todo` | A to-do item or checklist entry for the turn. |
+| `traversal` | A knowledge-graph traversal step. |
+| `artifact` | A produced artifact reference or payload metadata. |
+| `viz` | Visualization data for the answer. |
+| `graph` | Knowledge-graph data for the answer. |
+| `work_completed` | A unit of background work finished. |
+| `interrupted` | The turn was interrupted or cancelled. |
+| `done` | The turn completed successfully; `event.usage` carries token counts. |
+| `error` | The turn failed; `event.error` carries the message. |
+
+<Note>
+Treat unknown event types as informational and ignore them. The SDK forwards the full
+typed surface, and the service may add event types over time.
+</Note>
+
+## Event shape
+
+`ChatEvent` has `type`, `text`, `citation`, `usage`, `error`, `msg_id`, and `data`.
+Token usage is not emitted as its own event type: it is attached to `event.usage` on the
+`done` event (`UsageInfo` in Python, `TokenUsage` in TypeScript). `UsageInfo` /
+`TokenUsage` reports `prompt_tokens`, `completion_tokens`, `total_tokens`, `calls`, and
+`thinking_tokens`.

@@ -26,8 +26,17 @@ import { resolveConfig, DocWormConfig } from "./config.js";
 
 export type { DocWormConfig } from "./config.js";
 
+/**
+ * Error thrown for non-2xx DocWorm API responses and indexing failures.
+ *
+ * `status` is the HTTP status code returned by the API (or a synthetic code
+ * such as 408 for a client-side indexing timeout) and `body` is the raw
+ * response body.
+ */
 export class DocWormError extends Error {
+  /** HTTP status code returned by the DocWorm API. */
   status: number;
+  /** Raw response body returned by the DocWorm API. */
   body: string;
 
   constructor(status: number, body: string) {
@@ -61,10 +70,29 @@ function normalizeUsage(raw: unknown): TokenUsage | undefined {
   };
 }
 
+/**
+ * Official TypeScript client for the DocWorm API: document indexing,
+ * knowledge graphs, reasoning RAG queries, and streaming chat.
+ *
+ * @example
+ * ```ts
+ * const client = new DocWorm({ apiKey: "dw_live_..." });
+ * const upload = await client.upload("report.pdf");
+ * await client.uploadAndIndex("report.pdf");
+ * ```
+ */
 export class DocWorm {
   private baseUrl: string;
   private apiKey: string;
 
+  /**
+   * Create a DocWorm client.
+   *
+   * Configuration resolves in order: constructor options, then the
+   * `DOCWORM_API_KEY` / `DOCWORM_URL` environment variables, then `config.yaml`.
+   *
+   * @param config - API key and base URL overrides. `apiKey` and `baseUrl` are camelCase aliases.
+   */
   constructor(config: DocWormConfig = {}) {
     const cfg = resolveConfig(config);
     this.baseUrl = cfg.base_url.replace(/\/$/, "");
@@ -93,6 +121,7 @@ export class DocWorm {
     method: string,
     path: string,
     body?: unknown,
+    signal?: AbortSignal,
   ): Promise<T> {
     const url = `${this.baseUrl}${path}`;
     const init: RequestInit = {
@@ -102,6 +131,7 @@ export class DocWorm {
         ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
       },
     };
+    if (signal) init.signal = signal;
     if (body !== undefined) init.body = JSON.stringify(body);
 
     const res = await fetch(url, init);
@@ -114,7 +144,16 @@ export class DocWorm {
     return (text ? JSON.parse(text) : {}) as T;
   }
 
-  /** Public low-level HTTP escape hatch for endpoints the SDK doesn't wrap. */
+  /**
+   * Public low-level HTTP escape hatch for endpoints the SDK doesn't wrap.
+   * The base URL and auth header are applied automatically.
+   *
+   * @param method - HTTP method.
+   * @param path - Path appended to the configured base URL.
+   * @param options - Query `params`, JSON `json` body, and a `timeout` in seconds.
+   * @returns Parsed JSON response body (empty object on 204/empty body).
+   * @throws DocWormError on a non-2xx response.
+   */
   async rawRequest<T = Record<string, unknown>>(
     method: string,
     path: string,
@@ -129,6 +168,7 @@ export class DocWorm {
         method,
         `${path}${this.qs(options?.params)}`,
         options?.json,
+        options?.timeout ? ctrl.signal : undefined,
       );
     } finally {
       if (timer) clearTimeout(timer);
@@ -159,6 +199,13 @@ export class DocWorm {
 
   // ── Documents ──────────────────────────────────────────────
 
+  /**
+   * Upload a document to be indexed.
+   *
+   * @param file - File path (Node), `Buffer`, or web `File`.
+   * @param options - Optional filename override, custom `file_id`, and scoping ids (`project_id`, `chat_id`, `folder_id`).
+   * @returns Upload response containing the `file_id` used for indexing.
+   */
   async upload(
     file: File | Buffer | string,
     options?: { filename?: string; file_id?: string; project_id?: string; chat_id?: string; folder_id?: string },
@@ -185,6 +232,14 @@ export class DocWorm {
     return res.json() as Promise<UploadResponse>;
   }
 
+  /**
+   * Index an already-uploaded document, or upload and index in one step by
+   * passing `options.file`.
+   *
+   * @param file_id - Document identifier from `upload()`.
+   * @param options - Scoping ids and an optional `file` to upload with the request.
+   * @returns Index response, usually with `status: "queued"`; poll with {@link waitForIndexing}.
+   */
   async index(
     file_id: string,
     options?: { project_id?: string; chat_id?: string; folder_id?: string; file?: File | Buffer | string; filename?: string },
@@ -230,6 +285,13 @@ export class DocWorm {
     return res.json() as Promise<IndexResponse>;
   }
 
+  /**
+   * Upload a document and immediately queue it for indexing.
+   *
+   * @param file - File path (Node), `Buffer`, or web `File`.
+   * @param options - Optional filename override, custom `file_id`, and scoping ids.
+   * @returns Queued index response; use {@link waitForIndexing} to wait for completion.
+   */
   async uploadAndIndex(
     file: File | Buffer | string,
     options?: { filename?: string; file_id?: string; project_id?: string; chat_id?: string; folder_id?: string },
@@ -242,30 +304,77 @@ export class DocWorm {
     });
   }
 
+  /**
+   * Index a pre-built document tree JSON directly (programmatic ingestion).
+   *
+   * @param file_id - Document identifier to associate with the tree.
+   * @param tree - Array of tree nodes to index.
+   * @param filename - Display filename recorded with the document.
+   * @returns Index response, usually with `status: "completed"`.
+   */
   async indexJson(file_id: string, tree: Record<string, unknown>[], filename = "document.json"): Promise<IndexResponse> {
     return this.requestJson("POST", "/v1/index-json", { file_id, filename, tree });
   }
 
+  /**
+   * Queue batch reindexing for up to 100 documents, gated by plan concurrency.
+   *
+   * @param file_ids - Document identifiers to reindex.
+   * @returns Queued count, concurrency, and per-file results.
+   */
   async indexBatch(file_ids: string[]): Promise<IndexBatchResponse> {
     return this.requestJson("POST", "/v1/index/batch", { file_ids });
   }
 
+  /**
+   * Re-queue only the failed pages of a partially indexed document.
+   *
+   * @param file_id - Document identifier.
+   * @returns Retried page numbers, enqueued count, and total page count.
+   */
   async retryFailedPages(file_id: string): Promise<RetryFailedResponse> {
     return this.requestJson("POST", `/v1/index/retry-failed${this.qs({ file_id })}`);
   }
 
+  /**
+   * Cancel in-flight indexing tasks for one or more documents.
+   *
+   * @param file_ids - Document identifiers whose indexing should be cancelled.
+   * @returns Number of cancelled tasks.
+   */
   async cancelIndexing(file_ids: string[]): Promise<{ cancelled: number }> {
     return this.requestJson("POST", "/v1/index/cancel", { file_ids });
   }
 
+  /**
+   * Wipe derived indexing state for a document without uploading new bytes
+   * (used by the replace flow).
+   *
+   * @param file_id - Document identifier.
+   * @returns `{ reset: true }` when the state was cleared.
+   */
   async resetIndex(file_id: string): Promise<{ reset: boolean }> {
     return this.requestJson("POST", `/v1/reset_index${this.qs({ file_id })}`);
   }
 
+  /**
+   * Get the indexing status and progress of a document.
+   *
+   * @param file_id - Document identifier.
+   * @returns Status including `status`, `ready`, processed pages, and any error.
+   */
   async getDocumentStatus(file_id: string): Promise<DocumentStatus> {
     return this.requestJson("GET", `/v1/documents/${encodeURIComponent(file_id)}/status`);
   }
 
+  /**
+   * Poll document status until indexing completes, fails, or times out.
+   *
+   * @param file_id - Document identifier.
+   * @param options - `timeout` in seconds (default 600) and poll `interval` in seconds (default 5).
+   * @returns The terminal document status.
+   * @throws DocWormError with status 422 when indexing fails or is cancelled, 408 on timeout.
+   */
   async waitForIndexing(
     file_id: string,
     options?: { timeout?: number; interval?: number },
@@ -285,24 +394,53 @@ export class DocWorm {
     throw new DocWormError(408, `Indexing timeout after ${timeout}s`);
   }
 
+  /**
+   * List all documents owned by the authenticated user.
+   *
+   * @returns Array of document summary records.
+   */
   async listDocuments(): Promise<Record<string, unknown>[]> {
     const d = await this.requestJson<{ documents: Record<string, unknown>[] }>("GET", "/v1/documents");
     return d.documents ?? [];
   }
 
+  /**
+   * Delete a document and all of its derived artifacts.
+   *
+   * @param file_id - Document identifier.
+   * @returns Deletion status.
+   */
   async deleteDocument(file_id: string): Promise<{ status: string }> {
     return this.requestJson("DELETE", `/v1/documents/${encodeURIComponent(file_id)}`);
   }
 
-  /** Alias of deleteDocument via DELETE /v1/files/{file_id}. */
+  /**
+   * Alias of {@link deleteDocument} that deletes via `DELETE /v1/files/{file_id}`.
+   *
+   * @param file_id - Document identifier.
+   * @returns Deletion status.
+   */
   async deleteFile(file_id: string): Promise<{ status: string }> {
     return this.requestJson("DELETE", `/v1/files/${encodeURIComponent(file_id)}`);
   }
 
+  /**
+   * Reprocess an entire document, redoing extraction from the original file.
+   *
+   * @param file_id - Document identifier.
+   * @returns Status and the document identifier.
+   */
   async reprocessDocument(file_id: string): Promise<{ status: string; file_id: string }> {
     return this.requestJson("POST", `/v1/documents/${encodeURIComponent(file_id)}/reprocess`);
   }
 
+  /**
+   * Get the assembled document tree.
+   *
+   * @param file_id - Document identifier.
+   * @param download - When true, request the downloadable tree variant.
+   * @returns Root tree nodes.
+   */
   async getDocumentTree(file_id: string, download = false): Promise<TreeNode[]> {
     const d = await this.requestJson<{ tree: TreeNode[] }>(
       "GET",
@@ -311,6 +449,13 @@ export class DocWorm {
     return d.tree ?? [];
   }
 
+  /**
+   * Get the flat node-id to node map for a document.
+   *
+   * @param file_id - Document identifier.
+   * @param download - When true, request the downloadable variant.
+   * @returns Map of node id to node payload.
+   */
   async getNodeMap(file_id: string, download = false): Promise<Record<string, unknown>> {
     const d = await this.requestJson<{ node_map: Record<string, unknown> }>(
       "GET",
@@ -319,6 +464,12 @@ export class DocWorm {
     return d.node_map ?? {};
   }
 
+  /**
+   * List every page of a document with its extraction status.
+   *
+   * @param file_id - Document identifier.
+   * @returns Page numbers and statuses.
+   */
   async getDocumentPages(file_id: string): Promise<PageInfo[]> {
     const d = await this.requestJson<{ pages: PageInfo[] }>(
       "GET",
@@ -327,6 +478,13 @@ export class DocWorm {
     return d.pages ?? [];
   }
 
+  /**
+   * Get the extracted markdown content for a single page.
+   *
+   * @param file_id - Document identifier.
+   * @param page_num - 1-based page number.
+   * @returns Page markdown and status.
+   */
   async getPageContent(file_id: string, page_num: number): Promise<PageContent> {
     return this.requestJson(
       "GET",
@@ -334,6 +492,13 @@ export class DocWorm {
     );
   }
 
+  /**
+   * Fetch the rendered image bytes for a single page.
+   *
+   * @param file_id - Document identifier.
+   * @param page_num - 1-based page number.
+   * @returns Image bytes, content type, and total page count from `X-Total-Pages`.
+   */
   async getPageImage(file_id: string, page_num: number): Promise<PageImage> {
     const res = await fetch(
       `${this.baseUrl}/v1/documents/${encodeURIComponent(file_id)}/pages/${page_num}/image`,
@@ -350,6 +515,12 @@ export class DocWorm {
     };
   }
 
+  /**
+   * Download the original uploaded file.
+   *
+   * @param file_id - Document identifier.
+   * @returns File bytes, content type, and the `Content-Disposition` header.
+   */
   async getOriginal(file_id: string): Promise<OriginalFile> {
     const res = await fetch(
       `${this.baseUrl}/v1/documents/${encodeURIComponent(file_id)}/original`,
@@ -366,6 +537,12 @@ export class DocWorm {
     };
   }
 
+  /**
+   * Preview every sheet of an Excel workbook (headers and first rows).
+   *
+   * @param file_id - Document identifier.
+   * @returns Workbook filename and per-sheet previews.
+   */
   async getExcelPreview(file_id: string): Promise<ExcelPreview> {
     return this.requestJson(
       "GET",
@@ -375,6 +552,13 @@ export class DocWorm {
 
   // ── Chats ──────────────────────────────────────────────────
 
+  /**
+   * Create a chat. Idempotent: returns the existing chat when the id is taken.
+   *
+   * @param chat_id - Client-chosen chat identifier.
+   * @param options - Optional title, display name, project scope, and model override.
+   * @returns Chat metadata.
+   */
   async createChat(
     chat_id: string,
     options?: { title?: string; display_name?: string; project_id?: string; model?: string },
@@ -387,15 +571,33 @@ export class DocWorm {
     return this.requestJson("POST", "/v1/chats", body);
   }
 
+  /**
+   * List all chats for the current user.
+   *
+   * @returns Array of chat summary records.
+   */
   async listChats(): Promise<Record<string, unknown>[]> {
     const d = await this.requestJson<{ chats: Record<string, unknown>[] }>("GET", "/v1/chats");
     return d.chats ?? [];
   }
 
+  /**
+   * Get chat details.
+   *
+   * @param chat_id - Chat identifier.
+   * @returns Chat metadata.
+   */
   async getChat(chat_id: string): Promise<ChatInfo> {
     return this.requestJson("GET", `/v1/chats/${encodeURIComponent(chat_id)}`);
   }
 
+  /**
+   * Update chat metadata.
+   *
+   * @param chat_id - Chat identifier.
+   * @param fields - Fields to change: `title`, `display_name`, or `model`.
+   * @returns Updated chat record.
+   */
   async updateChat(
     chat_id: string,
     fields: { title?: string; display_name?: string; model?: string },
@@ -403,10 +605,23 @@ export class DocWorm {
     return this.requestJson("PATCH", `/v1/chats/${encodeURIComponent(chat_id)}`, fields);
   }
 
+  /**
+   * Delete a chat and its message history.
+   *
+   * @param chat_id - Chat identifier.
+   * @returns Deletion status.
+   */
   async deleteChat(chat_id: string): Promise<{ status: string }> {
     return this.requestJson("DELETE", `/v1/chats/${encodeURIComponent(chat_id)}`);
   }
 
+  /**
+   * Attach indexed documents to a chat, rebuilding its knowledge graph.
+   *
+   * @param chat_id - Chat identifier.
+   * @param file_ids - Document identifiers to attach.
+   * @returns Chat id and the attachment list.
+   */
   async attachDocuments(
     chat_id: string,
     file_ids: string[],
@@ -416,6 +631,13 @@ export class DocWorm {
     });
   }
 
+  /**
+   * Remove a document attachment from a chat.
+   *
+   * @param chat_id - Chat identifier.
+   * @param file_id - Document identifier to detach.
+   * @returns Detach status.
+   */
   async detachDocument(
     chat_id: string,
     file_id: string,
@@ -425,6 +647,12 @@ export class DocWorm {
     });
   }
 
+  /**
+   * Register a chat-uploaded file and enqueue indexing in the background.
+   *
+   * @param body - File name, GCS path, chat and file ids, plus optional title, project, size, and MIME type.
+   * @returns The registered `fileId` and record `id`.
+   */
   async registerChatFile(body: {
     name: string;
     gcsPath: string;
@@ -438,6 +666,13 @@ export class DocWorm {
     return this.requestJson("POST", "/v1/chat-files", body);
   }
 
+  /**
+   * Get chat message history.
+   *
+   * @param chat_id - Chat identifier.
+   * @param options - `limit` (default 50) plus optional `parent_limit` and cursor pairs (`before`, `before_id`).
+   * @returns Messages and a `has_more` flag.
+   */
   async getMessages(
     chat_id: string,
     options?: { limit?: number; parent_limit?: number; before?: string; before_id?: string },
@@ -452,6 +687,13 @@ export class DocWorm {
     );
   }
 
+  /**
+   * Save a chat message with the given role.
+   *
+   * @param chat_id - Chat identifier.
+   * @param body - Message role, content, and optional attachments, parent id, reasoning, citations, and usage.
+   * @returns The new `msg_id`.
+   */
   async saveMessage(
     chat_id: string,
     body: {
@@ -467,6 +709,15 @@ export class DocWorm {
     return this.requestJson("POST", `/v1/chats/${encodeURIComponent(chat_id)}/messages`, body);
   }
 
+  /**
+   * Edit a user message before retry (`PUT`). Requires `message` or `content`.
+   *
+   * @param chat_id - Chat identifier.
+   * @param msg_id - Message identifier.
+   * @param message - Replacement message text.
+   * @param content - Replacement content, when editing the stored content field.
+   * @returns Updated message record.
+   */
   async editMessage(chat_id: string, msg_id: string, message: string, content?: string): Promise<Record<string, unknown>> {
     const body: Record<string, string> = {};
     if (message) body.message = message;
@@ -481,6 +732,14 @@ export class DocWorm {
     );
   }
 
+  /**
+   * Patch a message's content or structure.
+   *
+   * @param chat_id - Chat identifier.
+   * @param msg_id - Message identifier.
+   * @param fields - Fields to patch.
+   * @returns Updated message record.
+   */
   async updateMessage(
     chat_id: string,
     msg_id: string,
@@ -493,6 +752,13 @@ export class DocWorm {
     );
   }
 
+  /**
+   * Delete a message from chat history.
+   *
+   * @param chat_id - Chat identifier.
+   * @param msg_id - Message identifier.
+   * @returns Deletion result.
+   */
   async deleteMessage(chat_id: string, msg_id: string): Promise<Record<string, unknown>> {
     return this.requestJson(
       "DELETE",
@@ -500,6 +766,13 @@ export class DocWorm {
     );
   }
 
+  /**
+   * Cancel an actively streaming chat message.
+   *
+   * @param chat_id - Chat identifier.
+   * @param msg_id - Streaming message identifier.
+   * @returns Cancellation result.
+   */
   async cancelChatMessage(chat_id: string, msg_id: string): Promise<Record<string, unknown>> {
     return this.requestJson(
       "POST",
@@ -507,6 +780,15 @@ export class DocWorm {
     );
   }
 
+  /**
+   * Prepare a user message for retry. Call this before opening a retry stream
+   * with the returned parent/retry ids.
+   *
+   * @param chat_id - Chat identifier.
+   * @param msg_id - Message identifier to retry.
+   * @param message - Optional replacement message text.
+   * @returns Retry context for the next stream.
+   */
   async retryChatMessage(chat_id: string, msg_id: string, message?: string): Promise<Record<string, unknown>> {
     return this.requestJson(
       "POST",
@@ -515,6 +797,14 @@ export class DocWorm {
     );
   }
 
+  /**
+   * Download a run artifact payload (for example an extraction result JSON).
+   *
+   * @param chat_id - Chat identifier.
+   * @param msg_id - Message identifier that produced the artifact.
+   * @param artifact_id - Artifact identifier.
+   * @returns Artifact payload.
+   */
   async getRunArtifact(chat_id: string, msg_id: string, artifact_id: string): Promise<unknown> {
     return this.requestJson(
       "GET",
@@ -522,6 +812,13 @@ export class DocWorm {
     );
   }
 
+  /**
+   * Inspect a streaming or completed message (steps, citations, buffer state).
+   *
+   * @param chat_id - Chat identifier.
+   * @param msg_id - Message identifier.
+   * @returns Diagnostic record.
+   */
   async diagnoseMessage(chat_id: string, msg_id: string): Promise<Record<string, unknown>> {
     return this.requestJson(
       "GET",
@@ -529,6 +826,13 @@ export class DocWorm {
     );
   }
 
+  /**
+   * Consolidate unconsolidated session memories for a chat.
+   *
+   * @param chat_id - Chat identifier.
+   * @param llm - When true, use the LLM-assisted consolidation pass.
+   * @returns Consolidation result.
+   */
   async consolidateMemories(chat_id: string, llm = false): Promise<Record<string, unknown>> {
     return this.requestJson(
       "POST",
@@ -537,6 +841,14 @@ export class DocWorm {
     );
   }
 
+  /**
+   * Download an archived structured-output file.
+   *
+   * @param chat_id - Chat identifier.
+   * @param session_id - Session that produced the output.
+   * @param filename - Archived file name.
+   * @returns File bytes.
+   */
   async downloadOutput(chat_id: string, session_id: string, filename: string): Promise<ArrayBuffer> {
     const res = await fetch(
       `${this.baseUrl}/v1/chats/${encodeURIComponent(chat_id)}/outputs/${encodeURIComponent(session_id)}/${encodeURIComponent(filename)}`,
@@ -549,6 +861,12 @@ export class DocWorm {
     return res.arrayBuffer();
   }
 
+  /**
+   * Generate a short chat title from a user prompt.
+   *
+   * @param prompt - User prompt to summarize.
+   * @returns Generated title, or an empty string when none is returned.
+   */
   async generateTitle(prompt: string): Promise<string> {
     const d = await this.requestJson<{ title: string }>("POST", "/v1/title", { prompt });
     return d.title ?? "";
@@ -706,8 +1024,16 @@ export class DocWorm {
   /**
    * Stream a chat turn over WebSocket. Consume with `for await`.
    *
-   * Call `retryChatMessage()` first when retrying an existing turn, and pass
+   * Reserved for direct-to-service deployments; cannot connect through the hosted
+   * service - use {@link chatStreamSse} there.
+   *
+   * Call {@link retryChatMessage} first when retrying an existing turn, and pass
    * the resulting parent/retry/base ids via options.
+   *
+   * @param chat_id - Chat identifier.
+   * @param message - User message; empty for retries driven by ids alone.
+   * @param options - Attached documents, orchestration mode, and retry/edit ids.
+   * @returns Async generator of chat events (thinking, answer, citations, done or error).
    */
   async *chatStream(
     chat_id: string,
@@ -726,7 +1052,17 @@ export class DocWorm {
     yield* this.wsStream(chat_id, frame);
   }
 
-  /** Replay missed events of a previously-started stream. */
+  /**
+   * Replay missed events of a previously-started WebSocket stream.
+   *
+   * Reserved for direct-to-service deployments; cannot connect through the hosted
+   * service - use {@link chatReconnectSse} there.
+   *
+   * @param chat_id - Chat identifier.
+   * @param msg_id - Streaming message identifier.
+   * @param last_seq - Last sequence number already received.
+   * @returns Async generator of chat events.
+   */
   async *chatReconnect(
     chat_id: string,
     msg_id: string,
@@ -735,7 +1071,17 @@ export class DocWorm {
     yield* this.wsStream(chat_id, { type: "reconnect", msg_id, last_seq });
   }
 
-  /** Cancel the current turn and start a new one. */
+  /**
+   * Cancel the current turn and start a new one seeded with a plan.
+   *
+   * Reserved for direct-to-service deployments; cannot connect through the hosted
+   * service - use {@link chatStreamSse} there.
+   *
+   * @param chat_id - Chat identifier.
+   * @param message - New user message.
+   * @param options - Attached documents and orchestration mode.
+   * @returns Async generator of chat events.
+   */
   async *chatInterrupt(
     chat_id: string,
     message: string,
@@ -865,10 +1211,15 @@ export class DocWorm {
   /**
    * Stream a chat turn over SSE. Use this when a WebSocket upgrade is
    * unavailable (the hosted service); events and terminal semantics match
-   * `chatStream`.
+   * {@link chatStream}.
    *
-   * Call `retryChatMessage()` first when retrying an existing turn, and pass
+   * Call {@link retryChatMessage} first when retrying an existing turn, and pass
    * the resulting parent/retry/base ids via options.
+   *
+   * @param chatId - Chat identifier.
+   * @param message - User message; empty for retries driven by ids alone.
+   * @param opts - Model override, orchestration mode, retry/edit ids, and an abort `signal`.
+   * @returns Async generator of chat events.
    */
   async *chatStreamSse(
     chatId: string,
@@ -884,7 +1235,15 @@ export class DocWorm {
     yield* this.sseStream(chatId, body, opts?.signal);
   }
 
-  /** Replay missed events over SSE. Mirrors `chatReconnect`. */
+  /**
+   * Replay missed events over SSE. Mirrors {@link chatReconnect}.
+   *
+   * @param chatId - Chat identifier.
+   * @param msgId - Streaming message identifier.
+   * @param lastSeq - Last sequence number already received.
+   * @param opts - Optional abort `signal`.
+   * @returns Async generator of chat events.
+   */
   async *chatReconnectSse(
     chatId: string,
     msgId: string,
@@ -900,6 +1259,13 @@ export class DocWorm {
 
   // ── Query ──────────────────────────────────────────────────
 
+  /**
+   * Run a reasoning RAG query over one or more indexed documents.
+   *
+   * @param query_text - The question to answer.
+   * @param options - Document scope, image handling, session/message continuity, and collection override.
+   * @returns Answer, citations, reasoning traces, retrieved node count, and iteration count.
+   */
   async query(
     query_text: string,
     options?: QueryOptions,
@@ -923,6 +1289,14 @@ export class DocWorm {
     };
   }
 
+  /**
+   * Cancel an active reasoning query.
+   *
+   * @param session_id - Session that owns the query.
+   * @param message_id - Message the query is answering.
+   * @param root_collection - Optional Firestore root collection override.
+   * @returns Cancellation status.
+   */
   async cancelQuery(
     session_id: string,
     message_id: string,
@@ -935,12 +1309,23 @@ export class DocWorm {
 
   // ── Codegen ────────────────────────────────────────────────
 
+  /**
+   * Check codegen service health (no auth required).
+   *
+   * @returns Health payload.
+   */
   async codegenHealth(): Promise<Record<string, unknown>> {
     const res = await fetch(`${this.baseUrl}/v1/codegen/health`);
     if (!res.ok) throw new DocWormError(res.status, await res.text().catch(() => ""));
     return res.json();
   }
 
+  /**
+   * Generate code for a document; for `excel_index` the generated code is also executed.
+   *
+   * @param body - Chat and document ids, task type, and optional prompt, output hint, entity context, exhaustive flag, and artifact name.
+   * @returns Generated code, explanation, and any run output.
+   */
   async generateCode(body: {
     chat_id: string;
     file_id: string;
@@ -957,10 +1342,24 @@ export class DocWorm {
     });
   }
 
+  /**
+   * List generated code artifacts for a chat.
+   *
+   * @param chat_id - Chat identifier.
+   * @returns Code artifact listing.
+   */
   async listCodes(chat_id: string): Promise<Record<string, unknown>> {
     return this.requestJson("GET", `/v1/codegen/${encodeURIComponent(chat_id)}/codes`);
   }
 
+  /**
+   * Fetch a persisted code artifact.
+   *
+   * @param chat_id - Chat identifier.
+   * @param code_id - Code artifact identifier.
+   * @param options - Optional `version` or `latest` selector.
+   * @returns Code artifact record.
+   */
   async getCode(
     chat_id: string,
     code_id: string,
@@ -975,6 +1374,15 @@ export class DocWorm {
     );
   }
 
+  /**
+   * Persist a modified code artifact. Set `options.fork` to fork to a new id.
+   *
+   * @param chat_id - Chat identifier.
+   * @param code_id - Code artifact identifier.
+   * @param body - Code, explanation, and optional source or task metadata.
+   * @param options - Optional `fork` flag and `version` selector.
+   * @returns Updated code artifact record.
+   */
   async putCode(
     chat_id: string,
     code_id: string,
@@ -991,10 +1399,23 @@ export class DocWorm {
     );
   }
 
+  /**
+   * Forward a tabular prediction request to the predictor service.
+   *
+   * @param body - Predictor payload.
+   * @returns Prediction result.
+   */
   async predict(body: Record<string, unknown>): Promise<Record<string, unknown>> {
     return this.requestJson("POST", "/v1/codegen/predict", body);
   }
 
+  /**
+   * Download a persisted named artifact (JSON inline, `.xlsx` by reference).
+   *
+   * @param chat_id - Chat identifier.
+   * @param name - Artifact name.
+   * @returns Artifact record.
+   */
   async getArtifact(chat_id: string, name: string): Promise<Record<string, unknown>> {
     return this.requestJson(
       "GET",
@@ -1004,18 +1425,42 @@ export class DocWorm {
 
   // ── Tables / Models / Skills ───────────────────────────────
 
+  /**
+   * Synthesize a table from selected document pages.
+   *
+   * @param file_id - Document identifier.
+   * @param pages - Page numbers to synthesize from.
+   * @returns Synthesized table payload.
+   */
   async synthesizeTable(file_id: string, pages: number[]): Promise<Record<string, unknown>> {
     return this.requestJson("POST", "/v1/tables/synthesize", { file_id, pages });
   }
 
+  /**
+   * Get a document's table of contents and sequential table groups.
+   *
+   * @param file_id - Document identifier.
+   * @returns TOC entries and table groups.
+   */
   async getToc(file_id: string): Promise<{ toc: unknown[]; table_groups: unknown[] }> {
     return this.requestJson("GET", `/v1/tables/toc/${encodeURIComponent(file_id)}`);
   }
 
+  /**
+   * Get public model provenance and per-section default models.
+   *
+   * @returns Model registry payload.
+   */
   async listModels(): Promise<Record<string, unknown>> {
     return this.requestJson("GET", "/v1/models");
   }
 
+  /**
+   * Generate a custom skill from a natural-language description.
+   *
+   * @param prompt - Description of the desired skill.
+   * @returns Generated skill name, description, and instruction.
+   */
   async generateSkill(prompt: string): Promise<Skill> {
     return this.requestJson("POST", "/v1/skills/generate", { prompt });
   }

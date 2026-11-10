@@ -1,0 +1,92 @@
+---
+title: "Models and Skills"
+description: "Inspect the server-side model defaults used for each section, override a model per chat or turn, and generate custom skills."
+---
+
+## Model resolution
+
+Models resolve server-side from the `model_configs/active` document. You do not need to
+set a model: omitting it uses the active defaults for the section making the call.
+
+To inspect what the service will use, call `list_models` / `listModels`. The response
+contains model provenance and the per-section defaults.
+
+<CodeGroup>
+```python Python
+models = client.list_models()
+print(models)
+```
+
+```ts TypeScript
+const models = await client.listModels();
+console.log(models);
+```
+</CodeGroup>
+
+### Per-chat and per-turn overrides
+
+An optional `model` can be supplied when creating or updating a chat, and on SSE
+streaming. Leave it out to keep following the server-side active default.
+
+<CodeGroup>
+```python Python
+# Pin a model on the chat
+client.create_chat("research-chat", display_name="Research", model="...")
+client.update_chat("research-chat", model="...")
+
+# Override for a single SSE turn
+async for event in client.chat_stream_sse(
+    "research-chat",
+    "Compare these",
+    model="...",
+):
+    ...
+```
+
+```ts TypeScript
+// Pin a model on the chat
+await client.createChat("research-chat", {
+  display_name: "Research",
+  model: "...",
+});
+await client.updateChat("research-chat", { model: "..." });
+
+// Override for a single SSE turn
+for await (const event of client.chatStreamSse("research-chat", "Compare these", {
+  model: "...",
+})) {
+  // ...
+}
+```
+</CodeGroup>
+
+## Generate a skill
+
+`generate_skill` / `generateSkill` turns a natural-language description into a custom
+skill with a name, description, and instruction.
+
+<CodeGroup>
+```python Python
+skill = client.generate_skill(
+    "Summarize SEC filings into a one-page risk brief"
+)
+print(skill.name)
+print(skill.description)
+print(skill.instruction)
+```
+
+```ts TypeScript
+const skill = await client.generateSkill(
+  "Summarize SEC filings into a one-page risk brief",
+);
+console.log(skill.name);
+console.log(skill.description);
+console.log(skill.instruction);
+```
+</CodeGroup>
+
+<Note>
+Model names and defaults are controlled by the service, not the SDK. Use
+`list_models` / `listModels` instead of hard-coding a model name; that keeps your
+application working when the service rotates its active defaults.
+</Note>
