@@ -1,18 +1,18 @@
 ---
 title: "Streaming"
-description: "Consume typed chat events over SSE or WebSocket, reconnect dropped streams, and interrupt a running turn."
+description: "Consume typed chat events over SSE, reconnect dropped streams, and cancel a running turn."
 ---
 
-Chat streaming has two transports with identical event semantics:
+SSE is the streaming transport for the hosted service. `chat_stream_sse` /
+`chatStreamSse` open `POST /v1/chats/{chat_id}/stream` and yield typed chat events.
+A successful turn ends with `done`; a failed turn ends with `error`.
 
-| Transport | Methods | Endpoint | When to use |
-| --- | --- | --- | --- |
-| SSE | `chat_stream_sse` / `chatStreamSse` | `POST /v1/chats/{chat_id}/stream` | Hosted service at `https://docworm.web.app`, where WebSocket upgrades are unavailable |
-| WebSocket | `chat_stream` / `chatStream` | `WS /v1/chats/{chat_id}/chat` | Direct-to-service deployments that support WebSocket upgrades |
-
-Choose `chat_stream_sse` / `chatStreamSse` for the hosted service
-(`https://docworm.web.app`) and standard HTTP proxies, or `chat_stream` / `chatStream`
-when connecting directly to a backend that supports WebSocket upgrades.
+<Note>
+The SDKs also ship WebSocket methods (`chat_stream`, `chat_reconnect`,
+`chat_interrupt` and their TypeScript twins) reserved for direct-to-service
+deployments where WebSocket upgrades are available. They cannot connect through the
+hosted service - use the SSE methods.
+</Note>
 
 ## Consume an SSE stream
 
@@ -53,58 +53,8 @@ for await (const event of client.chatStreamSse(
 ```
 </CodeGroup>
 
-The Python consumers are async generators. `chat_stream_sse` uses
-`httpx.AsyncClient` for the HTTP stream, and the WebSocket variants use the
-`websockets` package. The TypeScript SDK uses `fetch` streams for SSE and a native
-`WebSocket` for the WebSocket transport, falling back to the bundled `ws` package on
-Node versions without a global WebSocket.
-
-## Consume a WebSocket stream
-
-The WebSocket transport sends an **auth frame first** and waits for `auth_ok`, then
-sends the **chat frame**. The SDK performs both steps for you.
-
-<CodeGroup>
-```python Python
-async for event in client.chat_stream("research-chat", "Summarize the document"):
-    if event.type == "answer":
-        print(event.text, end="")
-    elif event.type == "done":
-        print("\nDone")
-```
-
-```ts TypeScript
-for await (const event of client.chatStream(
-  "research-chat",
-  "Summarize the document",
-)) {
-  if (event.type === "answer") process.stdout.write(event.text ?? "");
-  else if (event.type === "done") console.log("\nDone");
-}
-```
-</CodeGroup>
-
-Per-turn attachments can be passed with the WebSocket call when you do not want to
-attach documents to the chat permanently:
-
-<CodeGroup>
-```python Python
-async for event in client.chat_stream(
-    "research-chat",
-    "Compare these",
-    attached_docs=[{"id": "file_abc", "name": "report.pdf"}],
-):
-    ...
-```
-
-```ts TypeScript
-for await (const event of client.chatStream("research-chat", "Compare these", {
-  attached_docs: [{ id: "file_abc", name: "report.pdf" }],
-})) {
-  // ...
-}
-```
-</CodeGroup>
+The Python consumer is an async generator backed by `httpx.AsyncClient`. The
+TypeScript SDK consumes the `fetch` response stream in a loop.
 
 ## Reconnect a dropped stream
 
@@ -118,21 +68,13 @@ exact resume points, capture the raw sequence numbers in your own transport laye
 
 <CodeGroup>
 ```python Python
-# SSE
 async for event in client.chat_reconnect_sse(
-    "research-chat", streaming_msg_id, last_seq=12
-):
-    ...
-
-# WebSocket
-async for event in client.chat_reconnect(
     "research-chat", streaming_msg_id, last_seq=12
 ):
     ...
 ```
 
 ```ts TypeScript
-// SSE
 for await (const event of client.chatReconnectSse(
   "research-chat",
   streamingId,
@@ -140,39 +82,13 @@ for await (const event of client.chatReconnectSse(
 )) {
   // ...
 }
-
-// WebSocket
-for await (const event of client.chatReconnect("research-chat", streamingId, 12)) {
-  // ...
-}
 ```
 </CodeGroup>
 
-## Interrupt a turn
+## Cancel a running turn
 
-`chat_interrupt` / `chatInterrupt` replaces the current turn with a new user message
-over the WebSocket transport.
-
-<CodeGroup>
-```python Python
-async for event in client.chat_interrupt(
-    "research-chat", "Actually, do X instead"
-):
-    ...
-```
-
-```ts TypeScript
-for await (const event of client.chatInterrupt(
-  "research-chat",
-  "Actually, do X instead",
-)) {
-  // ...
-}
-```
-</CodeGroup>
-
-To stop a turn without starting a new one, use `cancel_chat_message` /
-`cancelChatMessage` from [Chats](/guides/chats).
+To stop a running turn, use `cancel_chat_message` / `cancelChatMessage` from
+[Chats](/guides/chats). The stream then ends with an `interrupted` event.
 
 ## Event types
 

@@ -1024,6 +1024,9 @@ export class DocWorm {
   /**
    * Stream a chat turn over WebSocket. Consume with `for await`.
    *
+   * Reserved for direct-to-service deployments; cannot connect through the hosted
+   * service - use {@link chatStreamSse} there.
+   *
    * Call {@link retryChatMessage} first when retrying an existing turn, and pass
    * the resulting parent/retry/base ids via options.
    *
@@ -1052,6 +1055,9 @@ export class DocWorm {
   /**
    * Replay missed events of a previously-started WebSocket stream.
    *
+   * Reserved for direct-to-service deployments; cannot connect through the hosted
+   * service - use {@link chatReconnectSse} there.
+   *
    * @param chat_id - Chat identifier.
    * @param msg_id - Streaming message identifier.
    * @param last_seq - Last sequence number already received.
@@ -1067,6 +1073,9 @@ export class DocWorm {
 
   /**
    * Cancel the current turn and start a new one seeded with a plan.
+   *
+   * Reserved for direct-to-service deployments; cannot connect through the hosted
+   * service - use {@link chatStreamSse} there.
    *
    * @param chat_id - Chat identifier.
    * @param message - New user message.

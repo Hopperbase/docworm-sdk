@@ -5,12 +5,11 @@ description: "How DocWorm API keys and bearer tokens are sent, plus the environm
 
 ## Getting an API key
 
-Generate a `dw_live_...` key in the DocWorm web application at
-[https://docworm.web.app](https://docworm.web.app): sign in, open your account's API
-settings, and create a key. Pass it to the constructor or set `DOCWORM_API_KEY`; keys
-that start with `dw_live_` are sent as `X-API-KEY`. For bearer-authenticated calls,
-pass a user session bearer token instead, and it is sent as
-`Authorization: Bearer <token>`.
+Generate a `dw_live_...` key in the DocWorm web application: sign in, open your
+account's API settings, and create a key. Pass it to the constructor or set
+`DOCWORM_API_KEY`; keys that start with `dw_live_` are sent as `X-API-KEY`. For
+bearer-authenticated calls, pass a user session bearer token instead, and it is sent
+as `Authorization: Bearer <token>`.
 
 ## How the header is chosen
 
@@ -42,7 +41,7 @@ client = DocWorm(api_key="eyJhbGciOi...")
 client = DocWorm()
 
 # Optional service URL override
-client = DocWorm(api_key="dw_live_...", base_url="https://docworm.web.app")
+client = DocWorm(api_key="dw_live_...", base_url="https://docworm.example.com")
 ```
 
 ```ts TypeScript
@@ -60,7 +59,7 @@ const anonymous = new DocWorm();
 // Optional service URL override
 const custom = new DocWorm({
   apiKey: "dw_live_...",
-  baseUrl: "https://docworm.web.app",
+  baseUrl: "https://docworm.example.com",
 });
 ```
 </CodeGroup>
@@ -72,11 +71,11 @@ Both SDKs read the same variables when a constructor argument is omitted:
 | Variable | Description | Default |
 | --- | --- | --- |
 | `DOCWORM_API_KEY` | DocWorm API key or bearer token | none |
-| `DOCWORM_URL` | Service base URL | `https://docworm.web.app` |
+| `DOCWORM_URL` | Service base URL | hosted DocWorm service |
 
 ```bash
 export DOCWORM_API_KEY="dw_live_..."
-export DOCWORM_URL="https://docworm.web.app"
+export DOCWORM_URL="https://docworm.example.com"
 ```
 
 A constructor argument always wins over the environment variable, which in turn wins
@@ -84,8 +83,8 @@ over a `config.yaml` file. See [Configuration](/configuration) for the full chai
 
 ## Base URL
 
-The default service URL is `https://docworm.web.app`. All SDK calls join paths onto
-this base URL, and WebSocket streams convert it to `wss://` automatically.
+The SDK defaults to the hosted DocWorm service; set `DOCWORM_URL` or `base_url` to
+point elsewhere. All SDK calls join paths onto this base URL.
 
 <Warning>
 Never ship an API key in client-side browser code. Use a backend proxy that keeps the

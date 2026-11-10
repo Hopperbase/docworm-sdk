@@ -29,10 +29,7 @@ existing chat instead of creating a duplicate.
 import asyncio
 from docworm import DocWorm
 
-client = DocWorm(
-    api_key="dw_live_...",              # or rely on DOCWORM_API_KEY
-    base_url="https://docworm.web.app",  # optional; this is the default
-)
+client = DocWorm(api_key="dw_live_...")  # or rely on DOCWORM_API_KEY
 
 # 1. Upload the file. You get back a file_id.
 upload = client.upload("report.pdf")
@@ -73,10 +70,7 @@ asyncio.run(main())
 ```ts TypeScript
 import { DocWorm } from "@docworm/sdk";
 
-const client = new DocWorm({
-  apiKey: "dw_live_...",               // or rely on DOCWORM_API_KEY
-  baseUrl: "https://docworm.web.app",  // optional; this is the default
-});
+const client = new DocWorm({ apiKey: "dw_live_..." }); // or rely on DOCWORM_API_KEY
 
 // 1. Upload the file. You get back a file_id.
 const upload = await client.upload("report.pdf");

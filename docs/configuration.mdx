@@ -32,19 +32,19 @@ ones. Environment variables and constructor arguments then override any file val
 # Copy this file to config.yaml and fill in your api_key.
 
 api_key: "dw_live_your_api_key"      # DocWorm API key
-base_url: "https://docworm.web.app"  # Service URL (default: hosted service)
+base_url: "https://docworm.example.com"  # Service URL (default: hosted DocWorm service)
 ```
 
 | Field | Type | Description |
 | --- | --- | --- |
 | `api_key` | string | API key or bearer token. Sent as described in [Authentication](/authentication). |
-| `base_url` | string | Service base URL. Trailing slashes are stripped. |
+| `base_url` | string | Service base URL. Defaults to the hosted DocWorm service. Trailing slashes are stripped. |
 
 Environment variables take precedence over the file:
 
 ```bash
 DOCWORM_API_KEY="dw_live_..."
-DOCWORM_URL="https://docworm.web.app"
+DOCWORM_URL="https://docworm.example.com"
 ```
 
 ## Where to put it
@@ -80,7 +80,7 @@ from docworm import DocWorm
 
 client = DocWorm(
     api_key=os.environ["DOCWORM_API_KEY"],
-    base_url=os.getenv("DOCWORM_URL", "https://docworm.web.app"),
+    base_url=os.getenv("DOCWORM_URL", "https://docworm.example.com"),
 )
 ```
 
@@ -89,7 +89,7 @@ import { DocWorm } from "@docworm/sdk";
 
 const client = new DocWorm({
   apiKey: process.env.DOCWORM_API_KEY!,
-  baseUrl: process.env.DOCWORM_URL ?? "https://docworm.web.app",
+  baseUrl: process.env.DOCWORM_URL ?? "https://docworm.example.com",
 });
 ```
 </CodeGroup>

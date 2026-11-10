@@ -89,7 +89,7 @@ function loadConfigFile(): RawConfig {
  */
 export interface DocWormConfig {
   /**
-   * DocWorm service base URL. Defaults to `https://docworm.web.app`.
+   * DocWorm service base URL. Defaults to the hosted DocWorm service.
    *
    * Resolution order: this field, `baseUrl`, `DOCWORM_URL`, then `config.yaml`.
    */
@@ -115,7 +115,7 @@ export interface DocWormConfig {
  * Precedence, highest first: explicit overrides (`api_key`/`apiKey`,
  * `base_url`/`baseUrl`), environment variables (`DOCWORM_API_KEY`,
  * `DOCWORM_URL`), then `config.yaml`. The base URL falls back to
- * `https://docworm.web.app` and any trailing slash is removed.
+ * the hosted DocWorm service and any trailing slash is removed.
  *
  * @param overrides - Constructor-supplied configuration.
  * @returns The resolved `api_key` and `base_url`.
