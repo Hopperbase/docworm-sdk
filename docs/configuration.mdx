@@ -1,0 +1,95 @@
+---
+title: "Configuration"
+description: "The config.yaml lookup order, supported fields, and how it combines with environment variables and constructor arguments."
+---
+
+Configuration is optional. For most projects, setting `DOCWORM_API_KEY` or passing
+`api_key` to the constructor is enough. The `config.yaml` file is there for local
+development and for teams that want a checked-out project configuration.
+
+## Precedence
+
+Sources are listed from highest to lowest priority:
+
+1. Constructor arguments (`api_key`, `base_url`)
+2. Environment variables (`DOCWORM_API_KEY`, `DOCWORM_URL`)
+3. `./config.yaml` in the current working directory
+4. `~/.config/docworm/config.yaml`
+5. `$XDG_CONFIG_HOME/docworm/config.yaml`
+6. Package-root `config.yaml` (the repository checkout)
+
+For the `config.yaml` file itself, the SDK checks locations 3 through 6 in that exact
+order and stops at the first file found; later files do not layer on top of earlier
+ones. Environment variables and constructor arguments then override any file values.
+
+## Fields
+
+`config.yaml.example` is the reference file:
+
+```yaml
+# config.yaml - DocWorm SDK Configuration
+#
+# Copy this file to config.yaml and fill in your api_key.
+
+api_key: "dw_live_your_api_key"      # DocWorm API key
+base_url: "https://docworm.web.app"  # Service URL (default: hosted service)
+```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `api_key` | string | API key or bearer token. Sent as described in [Authentication](/authentication). |
+| `base_url` | string | Service base URL. Trailing slashes are stripped. |
+
+Environment variables take precedence over the file:
+
+```bash
+DOCWORM_API_KEY="dw_live_..."
+DOCWORM_URL="https://docworm.web.app"
+```
+
+## Where to put it
+
+For a project, copy the example next to your code:
+
+```bash
+cp config.yaml.example config.yaml
+```
+
+For a user-wide default, use the XDG location:
+
+```bash
+mkdir -p ~/.config/docworm
+cp config.yaml.example ~/.config/docworm/config.yaml
+```
+
+<Note>
+`config.yaml` is ignored by git in this repository because it normally holds a live
+key. Commit `config.yaml.example` instead, and keep real keys in environment variables
+or a local, untracked file.
+</Note>
+
+## Disabling file discovery
+
+The quickstart examples construct the client explicitly with `api_key` and `base_url`
+so they never depend on config file discovery:
+
+<CodeGroup>
+```python Python
+import os
+from docworm import DocWorm
+
+client = DocWorm(
+    api_key=os.environ["DOCWORM_API_KEY"],
+    base_url=os.getenv("DOCWORM_URL", "https://docworm.web.app"),
+)
+```
+
+```ts TypeScript
+import { DocWorm } from "@docworm/sdk";
+
+const client = new DocWorm({
+  apiKey: process.env.DOCWORM_API_KEY!,
+  baseUrl: process.env.DOCWORM_URL ?? "https://docworm.web.app",
+});
+```
+</CodeGroup>

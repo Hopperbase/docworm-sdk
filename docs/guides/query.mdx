@@ -1,0 +1,144 @@
+---
+title: "Reasoning RAG Query"
+description: "Run multi-step reasoning queries directly over indexed documents, read citations, and cancel an active query."
+---
+
+`query` runs reasoning RAG over one document (`file_id`) or several (`file_ids`)
+without creating a chat. The service decomposes the question, traverses the document
+knowledge graph, and returns an answer with citations and reasoning traces.
+
+## Query a single document
+
+<CodeGroup>
+```python Python
+resp = client.query(
+    "What is the revenue growth?",
+    file_id="file_abc123",
+)
+
+print(resp.answer)
+print(resp.reasoning_traces)
+print(resp.sub_questions)
+print(resp.nodes_retrieved)
+```
+
+```ts TypeScript
+const resp = await client.query("What is the revenue growth?", {
+  file_id: "file_abc123",
+});
+
+console.log(resp.answer);
+console.log(resp.reasoning_traces);
+console.log(resp.sub_questions);
+console.log(resp.nodes_retrieved);
+```
+</CodeGroup>
+
+## Query multiple documents
+
+<CodeGroup>
+```python Python
+resp = client.query(
+    "Compare revenue across these reports",
+    file_ids=["file_abc", "file_def"],
+)
+```
+
+```ts TypeScript
+const resp = await client.query("Compare revenue across these reports", {
+  file_ids: ["file_abc", "file_def"],
+});
+```
+</CodeGroup>
+
+## Image context and conversation continuity
+
+<CodeGroup>
+```python Python
+# Include image URLs referenced by the answer
+resp = client.query("Describe the charts", file_id="file_abc", include_images=True)
+
+# Inline base64 images instead of URLs
+resp = client.query("Describe the charts", file_id="file_abc", inline_images=True)
+
+# Continue a conversation
+resp = client.query(
+    "Now tell me about expenses",
+    file_id="file_abc",
+    session_id="session-123",
+    message_id="msg-456",
+)
+```
+
+```ts TypeScript
+// Include image URLs referenced by the answer
+const withImages = await client.query("Describe the charts", {
+  file_id: "file_abc",
+  include_images: true,
+});
+
+// Inline base64 images instead of URLs
+const inline = await client.query("Describe the charts", {
+  file_id: "file_abc",
+  inline_images: true,
+});
+
+// Continue a conversation
+const followUp = await client.query("Now tell me about expenses", {
+  file_id: "file_abc",
+  session_id: "session-123",
+  message_id: "msg-456",
+});
+```
+</CodeGroup>
+
+## Response shape
+
+`QueryResponse` (the same name in both SDKs; fields are `snake_case`) contains:
+
+| Field | Description |
+| --- | --- |
+| `answer` | The final answer text. |
+| `citations` | `CitedNode` entries in Python and `Citation` entries in TypeScript. |
+| `reasoning_traces` | Ordered reasoning steps. |
+| `sub_questions` | Questions the service decomposed the query into. |
+| `nodes_retrieved` | Number of knowledge-graph nodes retrieved. |
+| `iterations` | Number of reasoning iterations. |
+
+### CitedNode / Citation
+
+A citation identifies a source location. The Python dataclass is `CitedNode` with
+`snake_case` fields; the TypeScript interface is `Citation`. Most TypeScript field names
+mirror Python, with one difference: Python exposes `file_id`, TypeScript exposes
+`fileId`. For PDFs, use `filename` and `start_page` / `end_page`. For spreadsheets, use
+`sheet_name`, `row_range`, `col_range`, and `column_headers`.
+
+| Python (`CitedNode`) | TypeScript (`Citation`) | Description |
+| --- | --- | --- |
+| `node_id`, `title` | `node_id`, `title` | Graph node identity and title. |
+| `filename`, `file_id` | `filename`, `fileId` | Source document. |
+| `start_page`, `end_page` | `start_page`, `end_page` | Page range (1-based). |
+| `sheet_name`, `row_range`, `col_range`, `column_headers` | `sheet_name`, `row_range`, `col_range`, `column_headers` | Spreadsheet location. |
+| `source_type`, `section_type` | `source_type`, `section_type` | Source and section classification. |
+| `snippet` | `snippet` | The quoted supporting text. |
+| `image_urls`, `download_urls` | `image_urls`, `download_urls` | Related images and downloads. |
+| `table_id`, `table_description`, `tables`, `images` | `table_id`, `table_description`, `tables`, `images` | Structured table and image context. |
+
+## Cancel a query
+
+Cancel an active reasoning query by the session and message ids you passed in.
+
+<CodeGroup>
+```python Python
+client.cancel_query(session_id="session-123", message_id="msg-456")
+```
+
+```ts TypeScript
+await client.cancelQuery("session-123", "msg-456");
+```
+</CodeGroup>
+
+<Note>
+For multi-turn conversations with attached documents, streaming, and persisted message
+history, use a chat instead. See [Chats](/guides/chats) and [Streaming](/guides/streaming).
+</Note>

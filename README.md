@@ -2,6 +2,12 @@
 
 Official SDKs for the DocWorm service — document indexing, knowledge graphs, reasoning RAG, and chat.
 
+## Documentation
+
+Full documentation lives in [`docs/`](docs/) and is built with [Mintlify](https://mintlify.com).
+Run `scripts/docs.sh` to regenerate the SDK API reference artifacts and validate the site;
+for a live preview, run `npx mint dev` from `docs/`.
+
 ## Quick Start
 
 ### Python

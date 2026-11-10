@@ -2,6 +2,8 @@
 
 Python SDK for the DocWorm service — document indexing, knowledge graphs, reasoning RAG, and chat.
 
+Full documentation: see the [`docs/`](../docs/) folder (Mintlify-powered).
+
 ## Installation
 
 ```bash

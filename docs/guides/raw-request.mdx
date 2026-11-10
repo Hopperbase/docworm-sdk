@@ -1,0 +1,104 @@
+---
+title: "Raw Requests"
+description: "Use the low-level escape hatch to call endpoints the SDK does not wrap yet, with authentication applied automatically."
+---
+
+When an endpoint is not wrapped by the SDK, use the raw request helper. It joins the
+path to `base_url`, injects the authentication header, and raises on non-2xx
+responses, exactly like the typed methods.
+
+<Tabs>
+<Tab title="Python">
+
+### Python: `_raw_request`
+
+```python
+_raw_request(
+    method,
+    path,
+    *,
+    params=None,
+    json=None,
+    data=None,
+    files=None,
+    timeout=60,
+) -> dict
+```
+
+Example:
+
+```python
+# GET with query parameters
+data = client._raw_request(
+    "GET",
+    "/v1/some-route",
+    params={"file_id": "file_abc"},
+)
+
+# POST a JSON body with a longer timeout
+result = client._raw_request(
+    "POST",
+    "/v1/some-route",
+    json={"file_id": "file_abc", "mode": "fast"},
+    timeout=120,
+)
+
+# Multipart upload with an explicit file tuple
+response = client._raw_request(
+    "POST",
+    "/v1/some-route",
+    files={"file": ("report.pdf", content, "application/pdf")},
+)
+```
+
+The helper returns parsed JSON, or an empty dict for `204` and empty bodies.
+
+</Tab>
+
+<Tab title="TypeScript">
+
+### TypeScript: `rawRequest`
+
+```ts
+rawRequest<T = Record<string, unknown>>(
+  method: string,
+  path: string,
+  options?: {
+    params?: Record<string, string | number | boolean>;
+    json?: unknown;
+    timeout?: number;
+  },
+): Promise<T>
+```
+
+Example:
+
+```ts
+// GET with query parameters
+const data = await client.rawRequest("GET", "/v1/some-route", {
+  params: { file_id: "file_abc" },
+});
+
+// POST a JSON body with a longer timeout
+const result = await client.rawRequest("POST", "/v1/some-route", {
+  json: { file_id: "file_abc", mode: "fast" },
+  timeout: 120,
+});
+```
+
+<Note>
+The TypeScript helper does not take `data` or `files` options. Use the typed `upload`
+method for multipart requests. The generic parameter lets you type the parsed response.
+</Note>
+
+</Tab>
+</Tabs>
+
+## When to use it
+
+- The service added an endpoint and the SDK has not wrapped it yet.
+- You need a response field the typed model drops.
+- You are prototyping a new call before contributing a typed method.
+
+Pin the SDK version and re-check the typed surface before long-term use: once a typed
+method exists, prefer it for the stable signature and documented request shape.

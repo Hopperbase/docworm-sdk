@@ -1,0 +1,99 @@
+name: docs
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  docs-check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python docs dependencies
+        run: pip install sphinx httpx websockets
+
+      - name: Build Python SDK reference (Sphinx JSON)
+        run: |
+          PYTHONPATH=python python -m sphinx -b json \
+            python/docs/source docs/sdk-artifacts/python
+          find docs/sdk-artifacts/python -type f ! -name '*.fjson' -delete
+          find docs/sdk-artifacts/python -type d -empty -delete
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install TypeScript dependencies
+        working-directory: typescript
+        run: npm ci
+
+      - name: Build TypeScript SDK reference (TypeDoc JSON)
+        working-directory: typescript
+        run: npm run docs:typedoc
+
+      - name: Validate Mintlify docs
+        working-directory: docs
+        run: npx -y mint@latest validate
+
+      - name: Check for broken links
+        working-directory: docs
+        run: npx -y mint@latest broken-links
+
+  docs-artifacts:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python docs dependencies
+        run: pip install sphinx httpx websockets
+
+      - name: Build Python SDK reference (Sphinx JSON)
+        run: |
+          PYTHONPATH=python python -m sphinx -b json \
+            python/docs/source docs/sdk-artifacts/python
+          find docs/sdk-artifacts/python -type f ! -name '*.fjson' -delete
+          find docs/sdk-artifacts/python -type d -empty -delete
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install TypeScript dependencies
+        working-directory: typescript
+        run: npm ci
+
+      - name: Build TypeScript SDK reference (TypeDoc JSON)
+        working-directory: typescript
+        run: npm run docs:typedoc
+
+      - name: Commit regenerated SDK artifacts
+        run: |
+          git config user.name "docworm-ci"
+          git config user.email "docworm-ci@users.noreply.github.com"
+          git add -A docs/sdk-artifacts/
+          if git diff --cached --quiet; then
+            echo "No SDK artifact changes."
+            exit 0
+          fi
+          git commit -m "docs: regenerate SDK reference artifacts [skip ci]"
+          git push

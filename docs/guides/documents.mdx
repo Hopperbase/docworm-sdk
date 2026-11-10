@@ -1,0 +1,284 @@
+---
+title: "Documents"
+description: "Upload, index, wait, inspect, reprocess, and delete documents with the DocWorm SDKs."
+---
+
+A document moves through three stages: **upload** (bytes stored, `file_id` assigned),
+**index** (parsing, page extraction, tree and knowledge graph construction, queued), and
+**ready** (queryable). `wait_for_indexing` / `waitForIndexing` polls until the document
+reaches a terminal status.
+
+## Upload
+
+`upload` accepts a file path, raw bytes or `Buffer`, or a file object. It returns an
+`UploadResponse` with the `file_id` you use for everything else.
+
+<CodeGroup>
+```python Python
+# From a path
+upload = client.upload("report.pdf")
+print(upload.file_id, upload.filename)
+
+# From bytes
+upload = client.upload(b"...", filename="report.pdf")
+
+# From a file object
+with open("report.pdf", "rb") as f:
+    upload = client.upload(f, filename="report.pdf")
+
+# Custom id and optional scoping
+upload = client.upload(
+    "report.pdf",
+    file_id="my-custom-id",
+    project_id="proj_1",
+)
+```
+
+```ts TypeScript
+// From a path (Node reads from disk), Buffer, or File
+const upload = await client.upload("report.pdf");
+console.log(upload.file_id, upload.filename);
+
+const fromBuffer = await client.upload(buffer, { filename: "report.pdf" });
+
+// Custom id and optional scoping
+const custom = await client.upload("report.pdf", {
+  file_id: "my-custom-id",
+  project_id: "proj_1",
+});
+```
+</CodeGroup>
+
+## Index
+
+`index` starts indexing and returns an `IndexResponse`, usually with
+`status: "queued"`. Pass a file to index a new upload in one step.
+
+<CodeGroup>
+```python Python
+# Index an uploaded document
+resp = client.index(upload.file_id)
+print(resp.status)  # "queued"
+
+# Upload + index in one call
+resp = client.index("doc-123", file="report.pdf")
+
+# Batch reindex (up to 100 files)
+resp = client.index_batch(["doc-1", "doc-2"])
+```
+
+```ts TypeScript
+// Index an uploaded document
+const resp = await client.index(upload.file_id);
+console.log(resp.status); // "queued"
+
+// Upload + index in one call
+const resp2 = await client.index("doc-123", { file: "report.pdf" });
+
+// Batch reindex (up to 100 files)
+const batch = await client.indexBatch(["doc-1", "doc-2"]);
+```
+</CodeGroup>
+
+## Upload and index in one call
+
+`upload_and_index` / `uploadAndIndex` is a convenience wrapper: upload first, then
+queue indexing, returning the queued `IndexResponse`.
+
+<CodeGroup>
+```python Python
+queued = client.upload_and_index("report.pdf")
+print(queued.file_id, queued.status)
+```
+
+```ts TypeScript
+const queued = await client.uploadAndIndex("report.pdf");
+console.log(queued.file_id, queued.status);
+```
+</CodeGroup>
+
+## Wait for indexing
+
+`wait_for_indexing` / `waitForIndexing` polls the status endpoint until the document is
+ready, fails, or the timeout expires. The default timeout is 600 seconds; the default
+poll interval is 5 seconds.
+
+<CodeGroup>
+```python Python
+status = client.wait_for_indexing(upload.file_id, timeout=300, poll_interval=5)
+print(status.ready, status.progress_pct)
+# Raises RuntimeError if indexing fails or is cancelled.
+# Raises TimeoutError if the deadline passes.
+```
+
+```ts TypeScript
+const status = await client.waitForIndexing(upload.file_id, {
+  timeout: 300,
+  interval: 5,
+});
+console.log(status.ready, status.progressPct);
+// Throws DocWormError with status 422 if indexing fails or is cancelled.
+// Throws DocWormError with status 408 on timeout.
+```
+</CodeGroup>
+
+## Get document status
+
+For a single non-blocking check, call the status endpoint directly.
+
+<CodeGroup>
+```python Python
+status = client.get_document_status(upload.file_id)
+print(f"Pages: {status.processed_pages}/{status.total_pages}")
+print(f"Tree version: {status.tree_version}")
+```
+
+```ts TypeScript
+const status = await client.getDocumentStatus(upload.file_id);
+console.log(`Pages: ${status.processedPages}/${status.totalPages}`);
+console.log(`Tree version: ${status.treeVersion}`);
+```
+</CodeGroup>
+
+`DocumentStatus` carries `status`, `ready`, `filename`, `total_pages`,
+`processed_pages`, `progress_pct`, `error`, timestamps, and `tree_version`
+(`totalPages`, `processedPages`, `progressPct`, `treeVersion` in TypeScript).
+
+## List documents
+
+<CodeGroup>
+```python Python
+for doc in client.list_documents():
+    print(doc["fileId"], doc.get("filename"), doc.get("status"))
+```
+
+```ts TypeScript
+const docs = await client.listDocuments();
+for (const doc of docs) {
+  console.log(doc.fileId, doc.filename, doc.status);
+}
+```
+</CodeGroup>
+
+## Tree, node map, and Excel preview
+
+<CodeGroup>
+```python Python
+tree = client.get_document_tree(upload.file_id)
+for node in tree:
+    print(node.node_id, node.title)
+
+node_map = client.get_node_map(upload.file_id)
+
+preview = client.get_excel_preview(upload.file_id)  # Excel files
+for sheet in preview["sheets"]:
+    print(sheet["name"], sheet["headers"])
+```
+
+```ts TypeScript
+const tree = await client.getDocumentTree(upload.file_id);
+for (const node of tree) console.log(node.node_id, node.title);
+
+const nodeMap = await client.getNodeMap(upload.file_id);
+
+const preview = await client.getExcelPreview(upload.file_id); // Excel files
+for (const sheet of preview.sheets) {
+  console.log(sheet.name, sheet.headers);
+}
+```
+</CodeGroup>
+
+## Page content and images
+
+`get_page_content` returns extracted markdown for one page. `get_page_image` returns
+JPEG bytes plus the total page count.
+
+<CodeGroup>
+```python Python
+content = client.get_page_content(upload.file_id, page_num=1)
+print(content.markdown)
+
+image = client.get_page_image(upload.file_id, page_num=1)
+print(image["total_pages"], len(image["content"]))
+```
+
+```ts TypeScript
+const content = await client.getPageContent(upload.file_id, 1);
+console.log(content.markdown);
+
+const image = await client.getPageImage(upload.file_id, 1);
+console.log(image.totalPages, image.content);
+```
+</CodeGroup>
+
+Related helpers include `get_document_pages` / `getDocumentPages` (per-page status) and
+`get_original` / `getOriginal` (the uploaded file bytes).
+
+## Reprocess and retry
+
+`reprocess_document` re-runs the full pipeline. `retry_failed_pages` retries only the
+pages that failed on a partial document.
+
+<CodeGroup>
+```python Python
+client.reprocess_document(upload.file_id)
+
+resp = client.retry_failed_pages(upload.file_id)
+print(resp)
+```
+
+```ts TypeScript
+await client.reprocessDocument(upload.file_id);
+
+const retry = await client.retryFailedPages(upload.file_id);
+console.log(retry);
+```
+</CodeGroup>
+
+## Cancel indexing
+
+<CodeGroup>
+```python Python
+resp = client.cancel_indexing([upload.file_id])
+print(resp)
+```
+
+```ts TypeScript
+const cancelled = await client.cancelIndexing([upload.file_id]);
+console.log(cancelled.cancelled);
+```
+</CodeGroup>
+
+## Reset index
+
+`reset_index` wipes derived state (pages, tree, graph) while keeping the uploaded
+bytes, which is useful for a replace or clean re-index flow.
+
+<CodeGroup>
+```python Python
+resp = client.reset_index(upload.file_id)
+print(resp)
+```
+
+```ts TypeScript
+const reset = await client.resetIndex(upload.file_id);
+console.log(reset.reset);
+```
+</CodeGroup>
+
+## Delete a document
+
+<CodeGroup>
+```python Python
+client.delete_document(upload.file_id)
+```
+
+```ts TypeScript
+await client.deleteDocument(upload.file_id);
+```
+</CodeGroup>
+
+<Note>
+Deleting a document removes it from any chat that has it attached. Attach the remaining
+documents again to refresh that chat's knowledge graph.
+</Note>

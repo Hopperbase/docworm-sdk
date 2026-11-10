@@ -1,0 +1,146 @@
+---
+title: "Codegen and Tables"
+description: "Generate and run document code, manage code artifacts, predict over tabular data, and synthesize tables."
+---
+
+The codegen surface lets an agent write code that reads a document and produces
+structured output. For the `excel_index` task the service also executes the generated
+code and returns its output.
+
+## Health check
+
+`codegen_health` / `codegenHealth` does not require authentication and reports whether
+the codegen service is reachable.
+
+<CodeGroup>
+```python Python
+client.codegen_health()
+```
+
+```ts TypeScript
+await client.codegenHealth();
+```
+</CodeGroup>
+
+## Generate code
+
+<CodeGroup>
+```python Python
+result = client.generate_code(
+    "research-chat",
+    "file_abc",
+    task="excel_index",
+    prompt="Extract every line item into a table",
+    artifact_name="line_items",
+)
+
+print(result.code_id)
+print(result.explanation)
+print(result.output)
+```
+
+```ts TypeScript
+const result = await client.generateCode({
+  chat_id: "research-chat",
+  file_id: "file_abc",
+  task: "excel_index",
+  prompt: "Extract every line item into a table",
+  artifact_name: "line_items",
+});
+
+console.log(result.code_id);
+console.log(result.explanation);
+console.log(result.output);
+```
+</CodeGroup>
+
+`generate_code` accepts `task` (`excel_index`, `scraper`, or `generic`), an optional
+`prompt`, `output_hint`, `entity_context`, `exhaustive`, and `artifact_name`. It returns
+a `CodegenResponse` with `code_id`, `code`, `explanation`, `run_id`, and `output`.
+
+## List, get, and update codes
+
+<CodeGroup>
+```python Python
+codes = client.list_codes("research-chat")
+
+code = client.get_code("research-chat", result.code_id)
+
+# Save a modified version; fork=True creates a new code id
+client.put_code(
+    "research-chat",
+    result.code_id,
+    code=result.code,
+    explanation="Tweaked parsing",
+    fork=True,
+)
+```
+
+```ts TypeScript
+const codes = await client.listCodes("research-chat");
+
+const code = await client.getCode("research-chat", result.code_id);
+
+// Save a modified version; fork creates a new code id
+await client.putCode(
+  "research-chat",
+  result.code_id,
+  { code: result.code, explanation: "Tweaked parsing" },
+  { fork: true },
+);
+```
+</CodeGroup>
+
+## Named artifacts
+
+`get_artifact` / `getArtifact` downloads a persisted named artifact. JSON artifacts come
+back inline; spreadsheet artifacts come back by reference.
+
+<CodeGroup>
+```python Python
+artifact = client.get_artifact("research-chat", "line_items")
+```
+
+```ts TypeScript
+const artifact = await client.getArtifact("research-chat", "line_items");
+```
+</CodeGroup>
+
+## Predict over tabular data
+
+`predict` forwards a tabular prediction payload to the predictor service.
+
+<CodeGroup>
+```python Python
+prediction = client.predict({"rows": [{"revenue": 120, "region": "EU"}]})
+```
+
+```ts TypeScript
+const prediction = await client.predict({
+  rows: [{ revenue: 120, region: "EU" }],
+});
+```
+</CodeGroup>
+
+## Synthesize a table and read the table of contents
+
+`synthesize_table` builds a table from selected pages. `get_toc` returns the document's
+table of contents and table groups.
+
+<CodeGroup>
+```python Python
+table = client.synthesize_table("file_abc", pages=[1, 2])
+
+toc = client.get_toc("file_abc")
+print(toc["toc"])
+print(toc["table_groups"])
+```
+
+```ts TypeScript
+const table = await client.synthesizeTable("file_abc", [1, 2]);
+
+const toc = await client.getToc("file_abc");
+console.log(toc.toc);
+console.log(toc.table_groups);
+```
+</CodeGroup>

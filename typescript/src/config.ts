@@ -81,15 +81,45 @@ function loadConfigFile(): RawConfig {
   }
 }
 
+/**
+ * Options accepted by the `DocWorm` constructor.
+ *
+ * Values passed here take precedence over environment variables and
+ * `config.yaml`.
+ */
 export interface DocWormConfig {
+  /**
+   * DocWorm service base URL. Defaults to `https://docworm.web.app`.
+   *
+   * Resolution order: this field, `baseUrl`, `DOCWORM_URL`, then `config.yaml`.
+   */
   base_url?: string;
+  /**
+   * DocWorm API key or bearer token.
+   *
+   * Keys starting with `dw_live_` are sent as `X-API-KEY`; all other values are
+   * sent as `Authorization: Bearer <token>`.
+   *
+   * Resolution order: this field, `apiKey`, `DOCWORM_API_KEY`, then `config.yaml`.
+   */
   api_key?: string;
-  /** camelCase alias for api_key */
+  /** camelCase alias for `api_key`; takes precedence over environment and file config. */
   apiKey?: string;
-  /** camelCase alias for base_url */
+  /** camelCase alias for `base_url`; takes precedence over environment and file config. */
   baseUrl?: string;
 }
 
+/**
+ * Resolve the effective client configuration.
+ *
+ * Precedence, highest first: explicit overrides (`api_key`/`apiKey`,
+ * `base_url`/`baseUrl`), environment variables (`DOCWORM_API_KEY`,
+ * `DOCWORM_URL`), then `config.yaml`. The base URL falls back to
+ * `https://docworm.web.app` and any trailing slash is removed.
+ *
+ * @param overrides - Constructor-supplied configuration.
+ * @returns The resolved `api_key` and `base_url`.
+ */
 export function resolveConfig(
   overrides: DocWormConfig = {},
 ): Required<Pick<DocWormConfig, "base_url" | "api_key">> {

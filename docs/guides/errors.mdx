@@ -1,0 +1,113 @@
+---
+title: "Errors and Retries"
+description: "How each SDK surfaces HTTP and indexing errors, and how to retry safely."
+---
+
+HTTP failures surface differently in each SDK, but both expose the status code and
+response body. Indexing failures surface from the wait helpers with language-specific
+exceptions.
+
+<Tabs>
+<Tab title="Python">
+
+### Python
+
+Every HTTP call runs `raise_for_status()`, so a non-2xx response raises
+`httpx.HTTPStatusError`. Inspect `e.response.status_code` and `e.response.text`.
+
+```python
+from httpx import HTTPStatusError
+
+try:
+    client.get_chat("my-chat")
+except HTTPStatusError as e:
+    if e.response.status_code == 404:
+        print("Chat not found")
+    elif e.response.status_code == 401:
+        print("Invalid credentials")
+    else:
+        print(f"HTTP {e.response.status_code}: {e.response.text}")
+```
+
+`wait_for_indexing` raises:
+
+| Condition | Exception |
+| --- | --- |
+| Indexing status is failed, error, or cancelled | `RuntimeError` with the status and error |
+| Deadline expires | `TimeoutError` |
+
+```python
+try:
+    status = client.wait_for_indexing(file_id, timeout=300)
+except RuntimeError as e:
+    print(f"Indexing failed: {e}")
+except TimeoutError:
+    print("Indexing did not finish in time")
+```
+
+</Tab>
+
+<Tab title="TypeScript">
+
+### TypeScript
+
+Every non-2xx response throws `DocWormError`, which carries the numeric `status` and the
+raw response `body`.
+
+```ts
+import { DocWormError } from "@docworm/sdk";
+
+try {
+  await client.getChat("my-chat");
+} catch (e) {
+  if (e instanceof DocWormError) {
+    if (e.status === 404) console.log("Chat not found");
+    else if (e.status === 401) console.log("Invalid credentials");
+    else console.log(`HTTP ${e.status}: ${e.body}`);
+  }
+}
+```
+
+`waitForIndexing` throws `DocWormError` with:
+
+| Condition | Error |
+| --- | --- |
+| Indexing status is failed, error, or cancelled | `DocWormError` with status `422` |
+| Deadline expires | `DocWormError` with status `408` |
+
+```ts
+try {
+  const status = await client.waitForIndexing(fileId, { timeout: 300 });
+} catch (e) {
+  if (e instanceof DocWormError && e.status === 422) {
+    console.error(`Indexing failed: ${e.body}`);
+  } else if (e instanceof DocWormError && e.status === 408) {
+    console.error("Indexing timed out");
+  }
+}
+```
+
+</Tab>
+</Tabs>
+
+## Retry guidance
+
+| Status | Meaning | What to do |
+| --- | --- | --- |
+| `401` | Missing or invalid credentials | Check `DOCWORM_API_KEY` and the key header shape described in [Authentication](/authentication). |
+| `403` | Not allowed for this key or plan | Check plan limits and resource ownership. |
+| `404` | Resource not found | Verify the `file_id` or `chat_id`; list resources to confirm. |
+| `408` | Client-side timeout from a wait helper | Increase the timeout, or poll status and resume when ready. |
+| `409` | Conflict, for example a conflicting in-flight operation | Re-read state and retry the operation. |
+| `422` | Indexing failed or invalid payload | Read the body. For indexing, inspect status and retry failed pages. |
+| `429` | Rate limited | Back off with exponential delay and jitter. |
+| `5xx` | Server error | Retry with exponential backoff and a cap; surface the body if it persists. |
+
+General practices:
+
+- Retry only idempotent operations automatically. Chat creation, upload with an explicit
+  `file_id`, reads, and deletes are safe; a streaming turn is not.
+- Use exponential backoff with jitter, and cap total attempts.
+- On `422` from indexing, call `retry_failed_pages` / `retryFailedPages` instead of
+  re-uploading the whole document.
+- Log the status code and body. Do not log API keys or full document contents.

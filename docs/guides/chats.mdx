@@ -1,0 +1,249 @@
+---
+title: "Chats"
+description: "Create chats, attach documents, manage message history, and work with run artifacts and outputs."
+---
+
+A chat is a persistent conversation bound to a set of indexed documents. Attaching or
+detaching documents rebuilds the chat's knowledge graph, so subsequent turns see the
+new document set.
+
+## Create, get, update, delete, list
+
+`create_chat` / `createChat` is idempotent: calling it again with the same chat id
+returns the existing chat instead of failing.
+
+<CodeGroup>
+```python Python
+chat = client.create_chat("research-chat", display_name="Research Chat")
+print(chat.id)
+
+chat = client.get_chat("research-chat")
+chats = client.list_chats()
+
+client.update_chat("research-chat", title="New title")
+client.delete_chat("research-chat")
+```
+
+```ts TypeScript
+const chat = await client.createChat("research-chat", {
+  display_name: "Research Chat",
+});
+console.log(chat.id);
+
+const one = await client.getChat("research-chat");
+const chats = await client.listChats();
+
+await client.updateChat("research-chat", { title: "New title" });
+await client.deleteChat("research-chat");
+```
+</CodeGroup>
+
+`ChatInfo` uses language-appropriate property names:
+
+| Python | TypeScript |
+| --- | --- |
+| `id`, `chat_id` | `id`, `chatId` |
+| `display_name` | `displayName` |
+| `created_at` | `created_at` |
+
+Both also include `title`, `model`, and `attachments`. Chat creation accepts an optional
+`model` override; omit it to use the server-side active default.
+
+## Attach and detach documents
+
+<CodeGroup>
+```python Python
+# Attach multiple documents (rebuilds the knowledge graph)
+client.attach_documents("research-chat", ["file_abc", "file_def"])
+
+# Detach one document
+client.detach_document("research-chat", "file_abc")
+```
+
+```ts TypeScript
+// Attach multiple documents (rebuilds the knowledge graph)
+await client.attachDocuments("research-chat", ["file_abc", "file_def"]);
+
+// Detach one document
+await client.detachDocument("research-chat", "file_abc");
+```
+</CodeGroup>
+
+## Register a chat-uploaded file
+
+If your application uploads bytes straight to storage, register the object with the
+chat and let DocWorm enqueue indexing in the background. `file_id` is required.
+
+<CodeGroup>
+```python Python
+client.register_chat_file(
+    name="report.pdf",
+    gcs_path="gs://bucket/uploads/report.pdf",
+    chat_id="research-chat",
+    file_id="file_abc",
+    title="Q3 Report",
+    mime_type="application/pdf",
+)
+```
+
+```ts TypeScript
+await client.registerChatFile({
+  name: "report.pdf",
+  gcsPath: "gs://bucket/uploads/report.pdf",
+  chatId: "research-chat",
+  fileId: "file_abc",
+  title: "Q3 Report",
+  mimeType: "application/pdf",
+});
+```
+</CodeGroup>
+
+## Message history
+
+`get_messages` / `getMessages` returns `messages` plus a `has_more` flag. Paginate
+backwards with the oldest `msg_id` from the previous page.
+
+<CodeGroup>
+```python Python
+result = client.get_messages("research-chat", limit=20)
+for msg in result["messages"]:
+    print(msg.role, msg.content[:100])
+
+if result["has_more"]:
+    older = client.get_messages(
+        "research-chat",
+        limit=20,
+        before=result["messages"][-1].msg_id,
+    )
+```
+
+```ts TypeScript
+const { messages, has_more } = await client.getMessages("research-chat", {
+  limit: 20,
+});
+for (const msg of messages) console.log(msg.role, msg.content.slice(0, 100));
+
+if (has_more) {
+  const older = await client.getMessages("research-chat", {
+    limit: 20,
+    before: messages[messages.length - 1].msg_id,
+  });
+}
+```
+</CodeGroup>
+
+## Save, edit, update, delete messages
+
+<CodeGroup>
+```python Python
+client.save_message("research-chat", role="user", content="Hello")
+client.edit_message("research-chat", msg_id="m1", message="Edited question")
+client.update_message("research-chat", msg_id="m2", fields={"content": "Fixed answer"})
+client.delete_message("research-chat", msg_id="m3")
+```
+
+```ts TypeScript
+await client.saveMessage("research-chat", { role: "user", content: "Hello" });
+await client.editMessage("research-chat", "m1", "Edited question");
+await client.updateMessage("research-chat", "m2", { content: "Fixed answer" });
+await client.deleteMessage("research-chat", "m3");
+```
+</CodeGroup>
+
+## Cancel and retry a turn
+
+`cancel_chat_message` stops an in-flight streaming turn. `retry_chat_message` prepares a
+retry and returns the ids to pass to the next stream call (see
+[Streaming](/guides/streaming)).
+
+<CodeGroup>
+```python Python
+client.cancel_chat_message("research-chat", msg_id="streaming-id")
+
+client.retry_chat_message("research-chat", msg_id="user-msg-id")
+
+# Resume the turn over SSE with the returned ids
+async for event in client.chat_stream_sse(
+    "research-chat",
+    "",
+    parent_msg_id="user-msg-id",
+    retry_msg_id="assistant-msg-id",
+):
+    ...
+```
+
+```ts TypeScript
+await client.cancelChatMessage("research-chat", "streaming-id");
+
+await client.retryChatMessage("research-chat", "user-msg-id");
+
+// Resume the turn over SSE with the returned ids
+for await (const event of client.chatStreamSse("research-chat", "", {
+  parentMsgId: "user-msg-id",
+  retryMsgId: "assistant-msg-id",
+})) {
+  // ...
+}
+```
+</CodeGroup>
+
+## Diagnose a message
+
+`diagnose_message` / `diagnoseMessage` returns internal detail for a turn: steps,
+citations, and buffer state. Use it when an answer looks incomplete.
+
+<CodeGroup>
+```python Python
+diagnostics = client.diagnose_message("research-chat", msg_id="m1")
+print(diagnostics)
+```
+
+```ts TypeScript
+const diagnostics = await client.diagnoseMessage("research-chat", "m1");
+console.log(diagnostics);
+```
+</CodeGroup>
+
+## Run artifacts and structured outputs
+
+`get_run_artifact` fetches a parsed JSON artifact produced during a run.
+`download_output` fetches an archived structured output as raw bytes.
+
+<CodeGroup>
+```python Python
+artifact = client.get_run_artifact(
+    "research-chat", msg_id="m1", artifact_id="artifact_1"
+)
+
+raw = client.download_output(
+    "research-chat", session_id="s1", filename="result.json"
+)
+```
+
+```ts TypeScript
+const artifact = await client.getRunArtifact("research-chat", "m1", "artifact_1");
+
+const raw = await client.downloadOutput("research-chat", "s1", "result.json");
+```
+</CodeGroup>
+
+## Memories and titles
+
+`consolidate_memories` compacts session memories for a chat. `generate_title` produces a
+short title from a prompt and is independent of any chat.
+
+<CodeGroup>
+```python Python
+client.consolidate_memories("research-chat")
+
+title = client.generate_title("quarterly revenue analysis")
+print(title)
+```
+
+```ts TypeScript
+await client.consolidateMemories("research-chat");
+
+const title = await client.generateTitle("quarterly revenue analysis");
+console.log(title);
+```
+</CodeGroup>

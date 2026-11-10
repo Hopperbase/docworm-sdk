@@ -2,11 +2,16 @@
 
 TypeScript/JavaScript SDK for the DocWorm service.
 
+Full documentation: see the `docs/` folder at the repository root (Mintlify-powered).
+
 ## Installation
 
 ```bash
 npm install @docworm/sdk
 ```
+
+The package installs the `ws` dependency automatically for WebSocket streaming
+fallback on Node < 22.
 
 ## Quick Start
 

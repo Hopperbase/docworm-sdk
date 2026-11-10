@@ -1,0 +1,133 @@
+---
+title: "Quickstart"
+description: "A complete DocWorm workflow: upload, index, wait, create a chat, attach documents, and stream the answer."
+---
+
+This page walks through one complete workflow in both languages:
+
+0. Set your key first: generate a `dw_live_...` key as described in
+   [Authentication](/authentication).
+1. Construct the client.
+2. Upload a document.
+3. Start indexing and wait for it to finish.
+4. Create a chat and attach the document.
+5. Stream a chat turn and consume events until `done`.
+
+```bash
+export DOCWORM_API_KEY="dw_live_..."
+```
+
+Two identifiers recur in the example. `upload.file_id` is the **server-assigned document
+ID** that identifies the uploaded file. `"research-chat"` is a **caller-chosen chat ID**:
+`create_chat` is idempotent on it, so calling it again with the same string returns the
+existing chat instead of creating a duplicate.
+
+## Full example
+
+<CodeGroup>
+```python Python
+import asyncio
+from docworm import DocWorm
+
+client = DocWorm(
+    api_key="dw_live_...",              # or rely on DOCWORM_API_KEY
+    base_url="https://docworm.web.app",  # optional; this is the default
+)
+
+# 1. Upload the file. You get back a file_id.
+upload = client.upload("report.pdf")
+print(f"Uploaded {upload.file_id}")
+
+# 2. Start indexing. index() returns immediately with status "queued".
+client.index(upload.file_id)
+
+# 3. Poll until the document is ready. Raises RuntimeError on failure,
+#    TimeoutError if the deadline passes.
+status = client.wait_for_indexing(upload.file_id, timeout=300)
+print(f"Indexed {status.processed_pages}/{status.total_pages} pages")
+
+# 4. Create a chat (idempotent) and attach the document.
+client.create_chat("research-chat", display_name="Research Chat")
+client.attach_documents("research-chat", [upload.file_id])
+
+# 5. Stream the turn over SSE and consume events until "done".
+async def main() -> None:
+    async for event in client.chat_stream_sse(
+        "research-chat", "What does this document say?"
+    ):
+        if event.type == "thinking":
+            print(event.text, end="")
+        elif event.type == "answer":
+            print(event.text, end="")
+        elif event.type == "citation":
+            c = event.citation
+            print(f"\n  Source: {c.filename} p.{c.start_page}-{c.end_page}")
+        elif event.type == "error":
+            print(f"\n  Error: {event.error}")
+        elif event.type == "done":
+            print(f"\nDone (tokens: {event.usage.total_tokens})")
+
+asyncio.run(main())
+```
+
+```ts TypeScript
+import { DocWorm } from "@docworm/sdk";
+
+const client = new DocWorm({
+  apiKey: "dw_live_...",               // or rely on DOCWORM_API_KEY
+  baseUrl: "https://docworm.web.app",  // optional; this is the default
+});
+
+// 1. Upload the file. You get back a file_id.
+const upload = await client.upload("report.pdf");
+console.log(`Uploaded ${upload.file_id}`);
+
+// 2. Start indexing. index() returns immediately with status "queued".
+await client.index(upload.file_id);
+
+// 3. Poll until the document is ready. Throws DocWormError(422) on failure
+//    and DocWormError(408) on timeout.
+const status = await client.waitForIndexing(upload.file_id, { timeout: 300 });
+console.log(`Indexed ${status.processedPages}/${status.totalPages} pages`);
+
+// 4. Create a chat (idempotent) and attach the document.
+await client.createChat("research-chat", { display_name: "Research Chat" });
+await client.attachDocuments("research-chat", [upload.file_id]);
+
+// 5. Stream the turn over SSE and consume events until "done".
+for await (const event of client.chatStreamSse(
+  "research-chat",
+  "What does this document say?",
+)) {
+  if (event.type === "thinking") {
+    process.stdout.write(event.text ?? "");
+  } else if (event.type === "answer") {
+    process.stdout.write(event.text ?? "");
+  } else if (event.type === "citation") {
+    const c = event.citation!;
+    console.log(`\n  Source: ${c.filename} p.${c.start_page}-${c.end_page}`);
+  } else if (event.type === "error") {
+    console.error(`\n  Error: ${event.error}`);
+  } else if (event.type === "done") {
+    console.log(`\nDone (tokens: ${event.usage?.total_tokens ?? 0})`);
+  }
+}
+```
+</CodeGroup>
+
+## What just happened
+
+| Step | Call | Result |
+| --- | --- | --- |
+| Upload | `upload` / `upload` | `UploadResponse` with `file_id` |
+| Index | `index` / `index` | `IndexResponse`, usually `status: "queued"` |
+| Wait | `wait_for_indexing` / `waitForIndexing` | `DocumentStatus` once ready |
+| Chat | `create_chat` / `createChat` | `ChatInfo` (safe to call again) |
+| Attach | `attach_documents` / `attachDocuments` | Rebuilds the chat knowledge graph |
+| Stream | `chat_stream_sse` / `chatStreamSse` | `ChatEvent` stream until `done` |
+
+## Next steps
+
+- [Authentication](/authentication): keys, bearer tokens, and environment variables.
+- [Configuration](/configuration): how `config.yaml` and environment variables combine.
+- [Streaming](/guides/streaming): the full event list, reconnects, and interrupts.

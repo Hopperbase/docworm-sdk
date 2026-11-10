@@ -1,0 +1,106 @@
+---
+title: "Introduction"
+description: "Official SDKs for the DocWorm service: document indexing, knowledge graphs, reasoning RAG, and chat."
+---
+
+DocWorm turns documents into structured, queryable knowledge. The official SDKs wrap
+the DocWorm HTTP and WebSocket APIs so you can upload and index documents, build
+knowledge graphs, run reasoning RAG queries, and stream chat turns without writing
+transport code.
+
+Two packages are available, with matching feature sets and language-appropriate naming
+(`snake_case` in Python, `camelCase` in TypeScript).
+
+## Installation
+
+<Tabs>
+<Tab title="Python">
+
+```bash
+pip install docworm
+```
+
+`docworm` is published on PyPI. It installs `httpx` and `websockets` automatically.
+
+</Tab>
+
+<Tab title="TypeScript">
+
+```bash
+npm install @docworm/sdk
+```
+
+`@docworm/sdk` installs the `ws` dependency automatically for WebSocket streaming fallback.
+
+</Tab>
+</Tabs>
+
+## First request
+
+Create a client, upload a document, wait for indexing, and ask a question:
+
+<CodeGroup>
+```python Python
+from docworm import DocWorm
+
+client = DocWorm(api_key="dw_live_...")  # or set DOCWORM_API_KEY
+
+upload = client.upload("report.pdf")
+client.index(upload.file_id)
+client.wait_for_indexing(upload.file_id)
+
+answer = client.query("What is the main finding?", file_id=upload.file_id)
+print(answer.answer)
+```
+
+```ts TypeScript
+import { DocWorm } from "@docworm/sdk";
+
+const client = new DocWorm({ apiKey: "dw_live_..." }); // or DOCWORM_API_KEY
+
+const upload = await client.upload("report.pdf");
+await client.index(upload.file_id);
+await client.waitForIndexing(upload.file_id);
+
+const answer = await client.query("What is the main finding?", {
+  file_id: upload.file_id,
+});
+console.log(answer.answer);
+```
+</CodeGroup>
+
+## Core workflows: Query vs. Chat
+
+Both SDKs expose two ways to ask questions. Pick the one that matches how much state you
+need to keep:
+
+| Workflow | Use it when | Calls |
+| --- | --- | --- |
+| Stateless one-shot `query` | You want a single reasoning-RAG answer over one or more indexed documents and no conversation state. Nothing persists on the server beyond the optional `session_id` / `message_id` you pass. | `client.query` with `file_id` or `file_ids`. |
+| Persistent multi-turn `chat` | You need conversation history, reconnects, and documents attached or detached between turns. | `create_chat` / `createChat`, then `attach_documents` / `attachDocuments`, then stream with `chat_stream_sse` / `chatStreamSse`. |
+
+## What you can do
+
+- **Documents**: upload, index, poll status, inspect trees and pages, reprocess, and delete.
+- **Chats**: persistent chat sessions with attached documents, full message history, and run artifacts.
+- **Streaming**: typed chat events over SSE (hosted service) or WebSocket (direct-to-service deployments).
+- **Reasoning RAG**: multi-step query with citations, sub-questions, and reasoning traces.
+- **Codegen and tables**: generate and run document code, predict over tabular data, synthesize tables.
+- **Models and skills**: inspect server-side model defaults and generate custom skills.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Build a complete upload, index, attach, and stream workflow.
+  </Card>
+  <Card title="Authentication" icon="key" href="/authentication">
+    How API keys and bearer tokens are sent on each request.
+  </Card>
+  <Card title="Documents" icon="file" href="/guides/documents">
+    Upload, index, and manage documents.
+  </Card>
+  <Card title="Streaming" icon="bolt" href="/guides/streaming">
+    Consume chat events over SSE or WebSocket.
+  </Card>
+</CardGroup>
